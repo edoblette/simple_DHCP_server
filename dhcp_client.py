@@ -1,28 +1,17 @@
-import socket,sys
+import socket
 
 serverPort = 67
 clientPort = 68
 
-#connect to server
-print("DHCP client is starting...\n")
-dest = ('<broadcast>', serverPort)
+
+print("DHCP client is starting...")
+dest = ('localhost', serverPort)
+
 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-clientSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-clientSocket.bind(('0.0.0.0', clientPort))
-while True:
-	    # Send data
-		message = input('lowercase sentence:').encode('utf-8')
-		print("sending %s" % format(message))
-		data = message
-		clientSocket.sendto(data, dest)
+
+data = bytes([0x00, 0x00, 0x00, 0x00]) #petit test d'envoi de bytes
+clientSocket.sendto(data, dest)
+print("Client test")
+		
 
 
-		data = clientSocket.recv(4096)
-		if data:
-			print(' Receive \t {} \t '.format(data ))				
-
-		else:
-			print('NO MSG:', server_address)
-			print('close:', server_address)
-			clientSocket.close()
-			break

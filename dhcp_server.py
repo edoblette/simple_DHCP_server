@@ -3,7 +3,7 @@ from socket import *
 serverPort = 67
 clientPort = 68
 
-addr = ('', serverPort)
+addr = ('localhost', serverPort) #test en local
 
 server = socket(AF_INET, SOCK_DGRAM)
 server.bind(addr)
@@ -11,8 +11,8 @@ server.bind(addr)
 while True:
     print("Waiting for DHCP discovery")
     data, address = server.recvfrom(2048)
+    print(bytes(data))
     print("Received DHCP discovery!")
-    print(data.decode('utf-8'), address.decode('utf-8'))
 
 
 
