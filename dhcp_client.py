@@ -9,9 +9,8 @@ dest = ('localhost', serverPort)
 
 clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 
-data = bytes([0x00, 0x00, 0x00, 0x00]) #petit test d'envoi de bytes
-clientSocket.sendto(data, dest)
+ip = bytes([0xC0,0xA8,0x01,0x01]) #petit test d'envoi de bytes (adresse IP)
+clientSocket.sendto(ip, dest)
 print("Client test")
-		
 
 

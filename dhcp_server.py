@@ -11,7 +11,8 @@ server.bind(addr)
 while True:
     print("Waiting for DHCP discovery")
     data, address = server.recvfrom(2048)
-    print(bytes(data))
+    test = inet_ntoa(data)
+    print(test) #test d'affichage d'adresse IP
     print("Received DHCP discovery!")
 
 
