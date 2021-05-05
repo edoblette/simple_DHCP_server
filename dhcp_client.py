@@ -21,14 +21,6 @@ class DHCP_client(object):
         print("Receive DHCP offer.")
         #print(data)
 
-        print("Send DHCP request.")
-        data = DHCP_client.request_get();
-        clientSocket.sendto(data, dest)
-        
-        data,address = clientSocket.recvfrom(MAX_BYTES)
-        print("Receive DHCP pack.\n")
-        #print(data)
-
     def discover_get():
         OP = bytes([0x01])
         HTYPE = bytes([0x01])
