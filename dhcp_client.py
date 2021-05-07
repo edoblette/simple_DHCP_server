@@ -8,7 +8,7 @@ clientPort = 68
 class DHCP_client(object):
     def client(self):
         print("DHCP client is starting...\n")
-        dest = ('localhost', serverPort)
+        dest = ('<broadcast>', serverPort)
         clientSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         clientSocket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         clientSocket.bind(('0.0.0.0', clientPort))
