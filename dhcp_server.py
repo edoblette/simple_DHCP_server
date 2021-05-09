@@ -2,11 +2,15 @@ from socket import *
 
 class serveurDHCP(object):
 
-    network = '192.168.65.0'
+    #Serveur DHCP qui fonctionne sur le réseau local 
+    network = '192.168.1.0'
+    server_address = '192.168.1.21'
     broadcast_address = '255.255.255.255'
     subnet_mask = '255.255.255.0'
-    router = '192.168.65.1'
+    router = '192.168.1.1'
     lease_time = 300
+
+    poll = ['192.168.1.100', '192.168.1.101', '192.168.1.102', '192.168.1.103', '192.168.1.104', '192.168.1.105']
 
     def get_clientmsg(packet): #avec cette méthode on récupère le message discover d'un client
         OP = packet[0]
@@ -23,14 +27,14 @@ class serveurDHCP(object):
         YIADDR = packet[16:20]
         SIADDR = packet[20:24]
         GIADDR = packet[24:28]
-        CHADDR = packet[28:28 + HLEN + 192]
+        CHADDR = packet[28:28 + 16 + 192]
         magic_cookie = packet[236:240]
     
         DHCPoptions = packet[240:]
 
         return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-    def set_offer(xid, ciaddr, chaddr, magicookie, router):
+    def set_offer(xid, chaddr, magicookie, server_address):
         OP = bytes([0x02])
         HTYPE = bytes([0x01])
         HLEN = bytes([0x06])
@@ -41,9 +45,11 @@ class serveurDHCP(object):
         SECS = bytes([0x00, 0x00])
         FLAGS = bytes([0x00, 0x00])
 
-        CIADDR = ciaddr
-        YIADDR = inet_aton('192.168.1.100')
-        SIADDR = inet_aton(router)
+        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
+        YIADDR = inet_aton('192.168.1.201')
+        print("Valeur de YIADDR : ")
+        print(YIADDR)
+        SIADDR = inet_aton(server_address)
         GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
         CHADDR = chaddr
 
@@ -53,10 +59,42 @@ class serveurDHCP(object):
         DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00])
         DHCPoptions3 = bytes([3 , 4 , 0xC0, 0xA8, 0x01, 0x01])
         DHCPOptions4 = bytes([51 , 4 , 0x00, 0x01, 0x51, 0x80])
-        DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x01])
+        DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x15]) #adresse du serveur
+        ENDMARK = bytes([0xff])
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5
+        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
         return package
+
+    def set_pack(xid, chaddr, magicookie, server_address):
+
+        OP = bytes([0x02])
+        HTYPE = bytes([0x01])
+        HLEN = bytes([0x06])
+        HOPS = bytes([0x00])
+
+        XID = xid
+
+        SECS = bytes([0x00, 0x00])
+        FLAGS = bytes([0x00, 0x00])
+
+        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
+        YIADDR = inet_aton('192.168.1.201')
+        SIADDR = inet_aton(server_address)
+        GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
+        CHADDR = chaddr
+
+        magic_cookie = magicookie
+
+        DHCPoptions1 = bytes([53, 1, 5])
+        DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00])
+        DHCPoptions3 = bytes([3 , 4 , 0xC0, 0xA8, 0x01, 0x01])
+        DHCPOptions4 = bytes([51 , 4 , 0x00, 0x01, 0x51, 0x80])
+        DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x15])
+        ENDMARK = bytes([0xff])
+
+        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
+        return package
+
 
 
     serverPort = 67
@@ -64,7 +102,7 @@ class serveurDHCP(object):
 
     serverAddress = '0.0.0.0'
 
-    addr = (serverAddress, serverPort) #test sur le réseau local
+    addr = (server_address, serverPort) #test sur le réseau local
 
     server = socket(AF_INET, SOCK_DGRAM)
     server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
@@ -72,17 +110,51 @@ class serveurDHCP(object):
     server.bind(addr)
 
     while True:
-        print("Waiting for DHCP discovery")
-        packet, address = server.recvfrom(4096)
-        xid, ciaddr, chaddr, magic_cookie = get_clientmsg(packet)[4], get_clientmsg(packet)[7], get_clientmsg(packet)[11], get_clientmsg(packet)[12]
-        #print(packet)
 
+        print("Server is running...")
+
+        dest = ('<broadcast>', 68) #Destination des messages du serveur
+
+        packet, address = server.recvfrom(4096) #Message
+        dhcpoptions = get_clientmsg(packet)[13] #Récupère les options du packet reçu
+        dhcpMessageType = dhcpoptions[2] #Type de message reçu
+
+        print("DHCP Message Type : ")
+        print(dhcpMessageType)
+
+        if(dhcpMessageType == 1): #Si c'est un DHCP Discover
+            print("Received DHCP Discovery!")
+            xid, ciaddr, chaddr, magic_cookie = get_clientmsg(packet)[4], get_clientmsg(packet)[7], get_clientmsg(packet)[11], get_clientmsg(packet)[12]
+            dataOffer = set_offer(xid, chaddr, magic_cookie, server_address)
+            server.sendto(dataOffer, dest) #On envoie offer
+        
+        if(dhcpMessageType == 3): #Si c'est un DHCP Request
+            print("Received DHCP Request!")
+            dataPack = set_pack(xid, chaddr, magic_cookie, server_address)
+            server.sendto(dataPack, dest) #On envoie Pack
+        
+
+        #print(packet)
+        #print("Requested IP Address : ")
+        #print(get_clientmsg(packet)[14])
+
+        '''
         print("Received DHCP discovery!")
-        dest = ('<broadcast>', 68)
-        data = set_offer(xid, ciaddr, chaddr, magic_cookie, router)
-        print(data)
-        server.sendto(data, dest)
-        print("Waiting for Request...")
+        dataOffer = set_offer(xid, chaddr, magic_cookie, server_address)
+        print("Data dans setoffer:")
+        print(dataOffer)
+        #print(data)
+        server.sendto(dataOffer, dest)
+        while True:
+            print("Waiting for Request...")
+            packet2, address2 = server.recvfrom(4096)
+            dhcpoptions = get_clientmsg(packet2)[13]
+            dhcpMessageType = dhcpoptions[1]
+            print("Type dhcp :")
+            print(dhcpMessageType)
+            print(packet2)
+            dataPack = set_pack(xid, chaddr, magic_cookie, server_address)
+            server.sendto(dataPack, dest) '''
 
 if __name__ == "main":
     serveurDHCP()
