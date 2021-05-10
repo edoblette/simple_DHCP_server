@@ -2,7 +2,7 @@ from socket import *
 from ipaddress import ip_address
 import re
 
-MAX_BYTES = 1024
+MAX_BYTES = 4096
 serverPort = 67
 clientPort = 68
 lease_time = 300
@@ -10,22 +10,21 @@ lease_time = 300
 class serverDHCP(object):
 
 	def server(self):
-		network = '192.168.65.0'
-		subnet_mask = '255.255.255.0'
-		addr_manager = IpVector(network, subnet_mask, 50 )
-		server_ip = addr_manager.get_server_ip()
+		network = '0.0.0.0'
+		subnet_mask = '255.255.0.0'
+		addr_manager = IpVector(network, subnet_mask, 255 )
+		server_ip = network
 		broadcast_address = addr_manager.get_broadcast_adress()
 		dns = ""
-
-		dest = ('<broadcast>', clientPort)
+		
 		server = socket(AF_INET, SOCK_DGRAM)
 		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind(('0.0.0.0', serverPort))
+		server.bind((server_ip, serverPort))
 
 		while True:
 
-
+			dest = ('<broadcast>', clientPort)
 			print("... Waiting for DHCP paquets ... ")
 			packet, address = server.recvfrom(MAX_BYTES)
 			dhcpoptions = serverDHCP.packet_analyser(packet)[13] #Récupère les options du packet reçu
