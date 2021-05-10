@@ -4,18 +4,51 @@ import re
 MAX_BYTES = 1024
 serverPort = 67
 clientPort = 68
-lease_time = 300
+lease_time = 8100
 
 class serverDHCP(object):
 
-	ip_list = '192.168.65.100'
+	ip_list = '192.168.65.150'
 	router = '192.168.65.1'
 
-	def mac_addr_format(chaddr):
-		chaddr = chaddr.hex()[:16]
-		mac_addr = ':'.join(chaddr[i:i+2] for i in range(0,12,2))
+	def server(self):
+		print("RUN")
+		broadcast_address = '255.255.255.255'
+		subnet_mask = '255.255.255.0'
+		dest = ('<broadcast>', clientPort)
 
-		return mac_addr
+		server = socket(AF_INET, SOCK_DGRAM)
+		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
+		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+		server.bind(('0.0.0.0', serverPort))
+
+		while True:
+			print("Waiting for DHCP discovery")
+			packet, address = server.recvfrom(MAX_BYTES)
+			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
+
+			print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
+			data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
+			server.sendto(data, dest)
+
+			while True:
+					try:
+						print("Wait DHCP request.")
+						data, address = server.recvfrom(MAX_BYTES)
+						print("Receive DHCP request.")
+
+						print("Send DHCP pack.\n")
+						data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
+						server.sendto(data, dest)
+						break
+					except:
+						raise
+
+	def mac_addr_format(adress):
+		adress = adress.hex()[:16]
+		adress = ':'.join(adress[i:i+2] for i in range(0,12,2))
+
+		return adress
 
 	def packet_analyser(packet): #avec cette méthode on récupère le message discover d'un client
 		OP = packet[0]
@@ -83,43 +116,6 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + ENDMARK
 		return package
 
-
-	def server(self):
-		print("RUN")
-		broadcast_address = '255.255.255.255'
-		subnet_mask = '255.255.255.0'
-		dest = ('<broadcast>', clientPort)
-
-		server = socket(AF_INET, SOCK_DGRAM)
-		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
-		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind(('0.0.0.0', serverPort))
-
-		while True:
-			print("Waiting for DHCP discovery")
-			packet, address = server.recvfrom(MAX_BYTES)
-			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
-			print(packet)
-			print("user : " + serverDHCP.mac_addr_format(chaddr)  + " want ip adress")
-
-			print("Received DHCP discovery!")
-			data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
-			print(magic_cookie)
-			server.sendto(data, dest)
-
-			while 1:
-					try:
-						print("Wait DHCP request.")
-						data, address = server.recvfrom(MAX_BYTES)
-						print("Receive DHCP request.")
-						#print(data)
-
-						print("Send DHCP pack.\n")
-						data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
-						server.sendto(data, dest)
-						break
-					except:
-						raise
 
 
 if __name__ == '__main__':
