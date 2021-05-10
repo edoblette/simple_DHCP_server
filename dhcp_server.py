@@ -5,14 +5,14 @@ import re
 MAX_BYTES = 1024
 serverPort = 67
 clientPort = 68
-lease_time = 8100
+lease_time = 300
 
 class serverDHCP(object):
 
 	def server(self):
 		network = '192.168.65.0'
 		subnet_mask = '255.255.255.0'
-		addr_manager = IpVector(network, subnet_mask, 100 )
+		addr_manager = IpVector(network, subnet_mask, 50 )
 		server_ip = addr_manager.get_server_ip()
 		broadcast_address = addr_manager.get_broadcast_adress()
 		dns = ""
@@ -24,30 +24,27 @@ class serverDHCP(object):
 		server.bind(('0.0.0.0', serverPort))
 
 		while True:
-			print("Waiting for DHCP discovery")
+
+
+			print("... Waiting for DHCP paquets ... ")
 			packet, address = server.recvfrom(MAX_BYTES)
+			dhcpoptions = serverDHCP.packet_analyser(packet)[13] #Récupère les options du packet reçu
+			dhcpMessageType = dhcpoptions[2] #Type de message reçu
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
+			
+			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
+				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
+				ip = addr_manager.get_free_ip()
+				data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+				server.sendto(data, dest)
 
-			print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-			ip = addr_manager.get_free_ip()
-			data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip)
-			server.sendto(data, dest)
-
-			while True:
-					try:
-						print("Wait DHCP request.")
-						data, address = server.recvfrom(MAX_BYTES)
-						print("Receive DHCP request.")
-
-						print("Send DHCP pack.\n")
-						data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip)
-						server.sendto(data, dest)
-						mac_add = str(serverDHCP.mac_addr_format(chaddr))
-						addr_manager.update_ip(ip, mac_add)
-
-						break
-					except:
-						raise
+			if(dhcpMessageType == 3): #Si c'est un DHCP Request
+				print("Receive DHCP request.")
+				data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+				server.sendto(data, dest)
+				mac_add = str(serverDHCP.mac_addr_format(chaddr))
+				addr_manager.update_ip(ip, mac_add)
+				addr_manager.print_vector()
 
 
 	def mac_addr_format(adress):
@@ -74,7 +71,7 @@ class serverDHCP(object):
 
 		return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-	def set_offer(xid, ciaddr, chaddr, magicookie, ip, server_ip):
+	def set_offer(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -89,16 +86,16 @@ class serverDHCP(object):
 		CHADDR = chaddr
 		Magiccookie = magicookie
 		DHCPoptions1 = bytes([53, 1, 2])  # DHCP Offer
-		DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00]) # subnet_mask 255.255.255.0
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(subnet_mask)# subnet_mask 255.255.255.0
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip) # server_ip
 		DHCPOptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x01]) # DHCP server
+		DHCPOptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
 		return package
 
-	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip):
+	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -113,10 +110,10 @@ class serverDHCP(object):
 		CHADDR = chaddr
 		Magiccookie = magicookie
 		DHCPoptions1 = bytes([53 , 1 , 5]) #DHCP ACK(value = 5)
-		DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00]) #255.255.255.0 subnet mask
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(subnet_mask)# subnet_mask 255.255.255.0
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip)
 		DHCPoptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPoptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x01]) #DHCP server
+		DHCPoptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + ENDMARK
@@ -130,6 +127,11 @@ class IpVector(object):
 		netw = [addr[i] & mask[i] for i in range(4)]
 		bcas = [(addr[i] & mask[i]) | (255^mask[i]) for i in range(4)]
 		server = [bcas[0], bcas[1], bcas[2], bcas[3]-1] #broadcast adress - 1
+		print("Network: {0}".format('.'.join(map(str, netw))))
+		print("Server: {0}".format('.'.join(map(str, server))))
+		print("Mask: {0}".format('.'.join(map(str, mask))))
+		print("Cidr: {0}".format(cidr))
+		print("Broadcast: {0}".format('.'.join(map(str, bcas))))
 		#convert to str format
 		netw = '.'.join(map(str, netw))
 		bcas = '.'.join(map(str, bcas))
@@ -169,15 +171,14 @@ class IpVector(object):
 		return 0
 
 	def print_vector(self):
+		print("IP ADDRESS  |  MAC ADRESS")
+		print("-----------------------------")
 		for key, value in self.list.items() :
-			print (key, value)
+			if(value != "null"):
+				print (key, value)
 
 
 if __name__ == '__main__':
 	dhcp_server = serverDHCP()
 	dhcp_server.server()
     
-
-
-
-
