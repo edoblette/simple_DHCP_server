@@ -1,4 +1,5 @@
 from socket import *
+from ipaddress import ip_address
 import re
 
 MAX_BYTES = 1024
@@ -8,15 +9,15 @@ lease_time = 8100
 
 class serverDHCP(object):
 
-	ip_list = '192.168.65.150'
-	router = '192.168.65.1'
-
 	def server(self):
-		print("RUN")
-		broadcast_address = '255.255.255.255'
+		network = '192.168.65.0'
 		subnet_mask = '255.255.255.0'
-		dest = ('<broadcast>', clientPort)
+		addr_manager = IpVector(network, subnet_mask, 100 )
+		server_ip = addr_manager.get_server_ip()
+		broadcast_address = addr_manager.get_broadcast_adress()
+		dns = ""
 
+		dest = ('<broadcast>', clientPort)
 		server = socket(AF_INET, SOCK_DGRAM)
 		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
@@ -28,7 +29,8 @@ class serverDHCP(object):
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
 
 			print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-			data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
+			ip = addr_manager.get_free_ip()
+			data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip)
 			server.sendto(data, dest)
 
 			while True:
@@ -38,11 +40,15 @@ class serverDHCP(object):
 						print("Receive DHCP request.")
 
 						print("Send DHCP pack.\n")
-						data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, serverDHCP.router)
+						data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip)
 						server.sendto(data, dest)
+						mac_add = str(serverDHCP.mac_addr_format(chaddr))
+						addr_manager.update_ip(ip, mac_add)
+
 						break
 					except:
 						raise
+
 
 	def mac_addr_format(adress):
 		adress = adress.hex()[:16]
@@ -68,7 +74,7 @@ class serverDHCP(object):
 
 		return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-	def set_offer(xid, ciaddr, chaddr, magicookie, router):
+	def set_offer(xid, ciaddr, chaddr, magicookie, ip, server_ip):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -77,14 +83,14 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr 
-		YIADDR = inet_aton(serverDHCP.ip_list) #adresse a donner
-		SIADDR = inet_aton(serverDHCP.router)
+		YIADDR = inet_aton(ip) #adresse a donner
+		SIADDR = inet_aton(server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		Magiccookie = magicookie
 		DHCPoptions1 = bytes([53, 1, 2])  # DHCP Offer
 		DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00]) # subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(router) # router
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip) # server_ip
 		DHCPOptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
 		DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x01]) # DHCP server
 		ENDMARK = bytes([0xff])
@@ -92,7 +98,7 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
 		return package
 
-	def pack_get(xid, ciaddr, chaddr, magicookie, router):
+	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -101,14 +107,14 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr 
-		YIADDR = inet_aton(serverDHCP.ip_list) #adresse a donner
-		SIADDR = inet_aton(serverDHCP.router)
+		YIADDR = inet_aton(ip) #adresse a donner
+		SIADDR = inet_aton(server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		Magiccookie = magicookie
 		DHCPoptions1 = bytes([53 , 1 , 5]) #DHCP ACK(value = 5)
 		DHCPoptions2 = bytes([1 , 4 , 0xFF, 0xFF, 0xFF, 0x00]) #255.255.255.0 subnet mask
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(router)
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip)
 		DHCPoptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
 		DHCPoptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x01]) #DHCP server
 		ENDMARK = bytes([0xff])
@@ -116,6 +122,55 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + ENDMARK
 		return package
 
+class IpVector(object):
+	def __init__(self, _network, _subnet_mask, _range):
+		addr = [int(x) for x in _network.split(".")]
+		mask = [int(x) for x in _subnet_mask.split(".")]
+		cidr = sum((bin(x).count('1') for x in mask))
+		netw = [addr[i] & mask[i] for i in range(4)]
+		bcas = [(addr[i] & mask[i]) | (255^mask[i]) for i in range(4)]
+		server = [bcas[0], bcas[1], bcas[2], bcas[3]-1] #broadcast adress - 1
+		#convert to str format
+		netw = '.'.join(map(str, netw))
+		bcas = '.'.join(map(str, bcas))
+		server = '.'.join(map(str, server))
+		start_addr = int(ip_address(netw).packed.hex(), 16) + 1 #router alway at x.x.x.0
+		end_addr = int(ip_address(netw).packed.hex(), 16) + 1 + _range 
+		end_addr = int(ip_address(server).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + 1 + _range) > int(ip_address(server).packed.hex(), 16) else (int(ip_address(netw).packed.hex(), 16) + 1 + _range) #ternary operation for range limit 
+		self.list = {}
+		self.server = server
+		self.broadcast = bcas
+		self.allocated = 0 
+		for ip in range(start_addr, end_addr):
+			self.add_ip(ip_address(ip).exploded, 'null') 
+
+    #method SET
+	def add_ip(self, ip, mac_address):
+		self.list[ip] = mac_address
+		++self.allocated
+		return
+
+	def update_ip(self, ip, mac_address):
+		self.list.update({ip: mac_address})
+		self.allocated =- 1
+		return
+
+    #method GET
+	def get_server_ip(self):
+		return self.server
+
+	def get_broadcast_adress(self):
+		return self.broadcast
+
+	def get_free_ip(self):
+		for key, value in self.list.items() :
+			if(value == "null"):
+				return key
+		return 0
+
+	def print_vector(self):
+		for key, value in self.list.items() :
+			print (key, value)
 
 
 if __name__ == '__main__':
