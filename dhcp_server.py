@@ -10,7 +10,7 @@ class serveurDHCP(object):
     router = '192.168.1.1'
     lease_time = 300
 
-    poll = ['192.168.1.100', '192.168.1.101', '192.168.1.102', '192.168.1.103', '192.168.1.104', '192.168.1.105']
+    poll = ['192.168.1.100', '192.168.1.101', '192.168.1.102', '192.168.1.103', '192.168.1.104', '192.168.1.105', '192.168.1.106']
 
     def get_clientmsg(packet): #avec cette méthode on récupère le message discover d'un client
         OP = packet[0]
@@ -34,7 +34,7 @@ class serveurDHCP(object):
 
         return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-    def set_offer(xid, chaddr, magicookie, server_address):
+    def set_offer(xid, chaddr, magicookie, server_address, poll):
         OP = bytes([0x02])
         HTYPE = bytes([0x01])
         HLEN = bytes([0x06])
@@ -46,7 +46,8 @@ class serveurDHCP(object):
         FLAGS = bytes([0x00, 0x00])
 
         CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = inet_aton('192.168.1.201')
+        #YIADDR = inet_aton('192.168.1.201')
+        YIADDR = inet_aton(poll[0])
         print("Valeur de YIADDR : ")
         print(YIADDR)
         SIADDR = inet_aton(server_address)
@@ -60,12 +61,13 @@ class serveurDHCP(object):
         DHCPoptions3 = bytes([3 , 4 , 0xC0, 0xA8, 0x01, 0x01])
         DHCPOptions4 = bytes([51 , 4 , 0x00, 0x01, 0x51, 0x80])
         DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x15]) #adresse du serveur
+        DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01])  #DNS servers
         ENDMARK = bytes([0xff])
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
+        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
         return package
 
-    def set_pack(xid, chaddr, magicookie, server_address):
+    def set_pack(xid, chaddr, magicookie, server_address, poll):
 
         OP = bytes([0x02])
         HTYPE = bytes([0x01])
@@ -78,7 +80,8 @@ class serveurDHCP(object):
         FLAGS = bytes([0x00, 0x00])
 
         CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = inet_aton('192.168.1.201')
+        #YIADDR = inet_aton('192.168.1.201')
+        YIADDR = inet_aton(poll[0])
         SIADDR = inet_aton(server_address)
         GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
         CHADDR = chaddr
@@ -90,9 +93,10 @@ class serveurDHCP(object):
         DHCPoptions3 = bytes([3 , 4 , 0xC0, 0xA8, 0x01, 0x01])
         DHCPOptions4 = bytes([51 , 4 , 0x00, 0x01, 0x51, 0x80])
         DHCPOptions5 = bytes([54 , 4 , 0xC0, 0xA8, 0x01, 0x15])
+        DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) 
         ENDMARK = bytes([0xff])
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
+        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
         return package
 
 
@@ -119,19 +123,21 @@ class serveurDHCP(object):
         dhcpoptions = get_clientmsg(packet)[13] #Récupère les options du packet reçu
         dhcpMessageType = dhcpoptions[2] #Type de message reçu
 
+        xid, ciaddr, chaddr, magic_cookie = get_clientmsg(packet)[4], get_clientmsg(packet)[7], get_clientmsg(packet)[11], get_clientmsg(packet)[12]
+
         print("DHCP Message Type : ")
         print(dhcpMessageType)
 
         if(dhcpMessageType == 1): #Si c'est un DHCP Discover
             print("Received DHCP Discovery!")
-            xid, ciaddr, chaddr, magic_cookie = get_clientmsg(packet)[4], get_clientmsg(packet)[7], get_clientmsg(packet)[11], get_clientmsg(packet)[12]
-            dataOffer = set_offer(xid, chaddr, magic_cookie, server_address)
+            dataOffer = set_offer(xid, chaddr, magic_cookie, server_address, poll)
             server.sendto(dataOffer, dest) #On envoie offer
         
         if(dhcpMessageType == 3): #Si c'est un DHCP Request
             print("Received DHCP Request!")
-            dataPack = set_pack(xid, chaddr, magic_cookie, server_address)
+            dataPack = set_pack(xid, chaddr, magic_cookie, server_address, poll)
             server.sendto(dataPack, dest) #On envoie Pack
+            poll.pop(0) #on retire l'adresse donéee de la poll (système not perfect)
         
 
         #print(packet)
