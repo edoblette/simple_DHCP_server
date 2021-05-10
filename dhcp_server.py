@@ -5,7 +5,7 @@ import re
 MAX_BYTES = 4096
 serverPort = 67
 clientPort = 68
-lease_time = 300
+lease_time = 8100
 
 class serverDHCP(object):
 
@@ -13,14 +13,14 @@ class serverDHCP(object):
 		network = '0.0.0.0'
 		subnet_mask = '255.255.0.0'
 		addr_manager = IpVector(network, subnet_mask, 255 )
-		server_ip = network
+		server_ip = addr_manager.get_server_ip()
 		broadcast_address = addr_manager.get_broadcast_adress()
 		dns = ""
 		
 		server = socket(AF_INET, SOCK_DGRAM)
 		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind((server_ip, serverPort))
+		server.bind((network, serverPort))
 
 		while True:
 
@@ -33,16 +33,16 @@ class serverDHCP(object):
 			
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
 				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-				ip = addr_manager.get_free_ip()
+				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
 				data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
 				server.sendto(data, dest)
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
 				print("Receive DHCP request.")
+				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
 				data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+				addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
 				server.sendto(data, dest)
-				mac_add = str(serverDHCP.mac_addr_format(chaddr))
-				addr_manager.update_ip(ip, mac_add)
 				addr_manager.print_vector()
 
 
@@ -78,21 +78,23 @@ class serverDHCP(object):
 		XID = xid
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
-		CIADDR = ciaddr 
+		CIADDR = ciaddr
 		YIADDR = inet_aton(ip) #adresse a donner
 		SIADDR = inet_aton(server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
-		Magiccookie = magicookie
-		DHCPoptions1 = bytes([53, 1, 2])  # DHCP Offer
+		magic_cookie = magicookie
+		DHCPoptions1 = bytes([53, 1, 2])
 		DHCPoptions2 = bytes([1 , 4]) + inet_aton(subnet_mask)# subnet_mask 255.255.255.0
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip) # server_ip
 		DHCPOptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
 		DHCPOptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
+		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
 		ENDMARK = bytes([0xff])
 
-		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + ENDMARK
+		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
 		return package
+
 
 	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
 		OP = bytes([0x02])
@@ -113,9 +115,10 @@ class serverDHCP(object):
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip)
 		DHCPoptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
 		DHCPoptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
+		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
 		ENDMARK = bytes([0xff])
 
-		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + ENDMARK
+		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
 		return package
 
 class IpVector(object):
@@ -163,11 +166,18 @@ class IpVector(object):
 	def get_broadcast_adress(self):
 		return self.broadcast
 
-	def get_free_ip(self):
+	def get_new_ip(self):
 		for key, value in self.list.items() :
 			if(value == "null"):
 				return key
 		return 0
+
+	def get_ip(self, mac_address):
+		for key, value in self.list.items() :
+			if(value == mac_address):
+				return key
+
+		return self.get_new_ip()
 
 	def print_vector(self):
 		print("IP ADDRESS  |  MAC ADRESS")
