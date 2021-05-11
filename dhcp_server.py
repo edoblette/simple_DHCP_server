@@ -11,8 +11,8 @@ class serverDHCP(object):
 
 	def server(self):
 		network = '0.0.0.0'
-		subnet_mask = '255.255.0.0'
-		addr_manager = IpVector(network, subnet_mask, 255 )
+		subnet_mask = '255.255.255.250'
+		addr_manager = IpVector(network, subnet_mask, 5 )
 		server_ip = addr_manager.get_server_ip()
 		broadcast_address = addr_manager.get_broadcast_adress()
 		dns = ""
@@ -34,16 +34,23 @@ class serverDHCP(object):
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
 				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
 				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
-				data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
-				server.sendto(data, dest)
+				if(ip != False):
+					data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+					server.sendto(data, dest)
+				else:
+					print(serverDHCP.error_msg(0))
+
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
 				print("Receive DHCP request.")
 				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
-				data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
-				addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
-				server.sendto(data, dest)
-				addr_manager.print_vector()
+				if(ip != False):
+					data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+					addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
+					server.sendto(data, dest)
+					addr_manager.print_vector()
+				else:
+					print(serverDHCP.error_msg(0))
 
 
 	def mac_addr_format(adress):
@@ -121,6 +128,13 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
 		return package
 
+	def error_msg(type_error):
+		error = {
+				0:'No more IPs available',
+				1:'Monday',
+		}
+		return error.get(type_error,"Unexpected error")
+
 class IpVector(object):
 	def __init__(self, _network, _subnet_mask, _range):
 		addr = [int(x) for x in _network.split(".")]
@@ -170,7 +184,7 @@ class IpVector(object):
 		for key, value in self.list.items() :
 			if(value == "null"):
 				return key
-		return 0
+		return False
 
 	def get_ip(self, mac_address):
 		for key, value in self.list.items() :

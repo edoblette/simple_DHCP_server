@@ -1,4 +1,5 @@
 import socket, uuid
+import argparse
 
 MAX_BYTES = 1024
 serverPort = 67
@@ -19,7 +20,6 @@ class DHCP_client(object):
 
 		packet, address = clientSocket.recvfrom(MAX_BYTES)
 		print("Receive DHCP offer.")
-		print(DHCP_client.packet_analyser(packet))
 		xid, yiaddr, siaddr, chaddr, magic_cookie = DHCP_client.packet_analyser(packet)[4], DHCP_client.packet_analyser(packet)[8], DHCP_client.packet_analyser(packet)[9], DHCP_client.packet_analyser(packet)[11], DHCP_client.packet_analyser(packet)[12]
 
 		print("Send DHCP request.")
@@ -126,5 +126,15 @@ class DHCP_client(object):
 	
 
 if __name__ == '__main__':
+	# Initialize parser
+	parser = argparse.ArgumentParser()
+	# Adding optional argument
+	parser.add_argument("-o", "--Output", help = "Show Output")
+	# Read arguments from command line
+	args = parser.parse_args()
+	if args.Output:
+	   raw_mac_addr = int(str(args.Output).replace(":", ""), base=16)
+
+	print(raw_mac_addr)	
 	dhcp_client = DHCP_client()
 	dhcp_client.client()
