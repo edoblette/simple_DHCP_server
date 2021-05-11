@@ -1,31 +1,34 @@
 from socket import *
 from ipaddress import ip_address
-import re
+import re, argparse
 
 MAX_BYTES = 4096
 serverPort = 67
 clientPort = 68
-lease_time = 8100
 
 class serverDHCP(object):
 
-	def server(self):
-		network = '0.0.0.0'
-		subnet_mask = '255.255.0.0'
-		ip_range = 255
-		addr_manager = IpVector(network, subnet_mask, ip_range )
-		server_ip = addr_manager.get_server_ip()
-		broadcast_address = addr_manager.get_broadcast_adress()
-		dns = ""
-		
+	def server(self, _network, _subnet_mask, _range, _time ):
+		self.server 
+		self.network = _network
+		self.subnet_mask = _subnet_mask
+		self.ip_range = _range
+		self.lease_time = _time
+		self.addr_manager = IpVector(_network, _subnet_mask, _range )
+		self.server_ip = self.addr_manager.get_server_ip()
+		self.broadcast_address = self.addr_manager.get_broadcast_adress()
+		self.dns = ""
+
+	def start(self):
 		server = socket(AF_INET, SOCK_DGRAM)
 		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind((network, serverPort))
+		server.bind((self.network, serverPort))
 
 		while True:
 			dest = ('<broadcast>', clientPort)
 			print("... Waiting for DHCP paquets ... ")
+
 			packet, address = server.recvfrom(MAX_BYTES)
 			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
 			dhcpMessageType = dhcpoptions[2] 																	#Type de message reçu
@@ -53,6 +56,7 @@ class serverDHCP(object):
 					addr_manager.print_vector()
 				else:
 					print(serverDHCP.error_msg(0))
+		pass	
 
 	#### Server Methods
 	def ip_addr_format(address):
@@ -208,6 +212,15 @@ class IpVector(object):
 
 
 if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("network", type=str, help="your network")
+	parser.add_argument("submask", type=str, help="network submask")
+	parser.add_argument("range", type=int, help="IPs range")
+	parser.add_argument("time", type=int, help="lease time")
+	args = parser.parse_args()
+	print(args.network)
+
 	dhcp_server = serverDHCP()
-	dhcp_server.server()
+	dhcp_server.server(args.network, args.submask, args.range, args.time)
+	dhcp_server.start()
     
