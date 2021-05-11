@@ -11,8 +11,9 @@ class serverDHCP(object):
 
 	def server(self):
 		network = '0.0.0.0'
-		subnet_mask = '255.255.255.250'
-		addr_manager = IpVector(network, subnet_mask, 5 )
+		subnet_mask = '255.255.0.0'
+		ip_range = 255
+		addr_manager = IpVector(network, subnet_mask, ip_range )
 		server_ip = addr_manager.get_server_ip()
 		broadcast_address = addr_manager.get_broadcast_adress()
 		dns = ""
@@ -23,17 +24,18 @@ class serverDHCP(object):
 		server.bind((network, serverPort))
 
 		while True:
-
 			dest = ('<broadcast>', clientPort)
 			print("... Waiting for DHCP paquets ... ")
 			packet, address = server.recvfrom(MAX_BYTES)
-			dhcpoptions = serverDHCP.packet_analyser(packet)[13] #Récupère les options du packet reçu
-			dhcpMessageType = dhcpoptions[2] #Type de message reçu
+			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
+			dhcpMessageType = dhcpoptions[2] 																	#Type de message reçu
+			dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[5:9]) if (dhcpoptions[3] == 50) else False  #si pas d'adresse demande return false
+
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
 			
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
 				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
+				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
 					data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
 					server.sendto(data, dest)
@@ -43,7 +45,7 @@ class serverDHCP(object):
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
 				print("Receive DHCP request.")
-				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)))
+				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
 					data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
 					addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
@@ -52,12 +54,13 @@ class serverDHCP(object):
 				else:
 					print(serverDHCP.error_msg(0))
 
+	#### Server Methods
+	def ip_addr_format(address):
+		return ('{}.{}.{}.{}'.format(*bytearray(address)))
 
-	def mac_addr_format(adress):
-		adress = adress.hex()[:16]
-		adress = ':'.join(adress[i:i+2] for i in range(0,12,2))
-
-		return adress
+	def mac_addr_format(address):
+		address = address.hex()[:16]
+		return (':'.join(address[i:i+2] for i in range(0,12,2)))
 
 	def packet_analyser(packet): #avec cette méthode on récupère le message discover d'un client
 		OP = packet[0]
@@ -102,7 +105,6 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
 		return package
 
-
 	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
@@ -131,9 +133,9 @@ class serverDHCP(object):
 	def error_msg(type_error):
 		error = {
 				0:'No more IPs available',
-				1:'Monday',
+				1:'Monday'
 		}
-		return error.get(type_error,"Unexpected error")
+		return error.get(type_error, "Unexpected error")
 
 class IpVector(object):
 	def __init__(self, _network, _subnet_mask, _range):
@@ -163,35 +165,39 @@ class IpVector(object):
 			self.add_ip(ip_address(ip).exploded, 'null') 
 
     #method SET
-	def add_ip(self, ip, mac_address):
+	def add_ip(self, ip, mac_address):			#fait le lien clee/valeur entre l'ip et l'adresse mac
 		self.list[ip] = mac_address
-		++self.allocated
+		++self.allocated						#incremente le compteur d'adresse disponible
 		return
 
 	def update_ip(self, ip, mac_address):
-		self.list.update({ip: mac_address})
-		self.allocated =- 1
+		self.list.update({ip: mac_address})		#update l'adresse mac liee a l'adresse ip
+		self.allocated =- 1						#decremente le compteur d'adresse disponible
 		return
 
     #method GET
-	def get_server_ip(self):
+	def get_server_ip(self):					#renvoie l'adresse du serveur
 		return self.server
 
-	def get_broadcast_adress(self):
+	def get_broadcast_adress(self):				#renvoie l'adresse broadcast
 		return self.broadcast
 
-	def get_new_ip(self):
-		for key, value in self.list.items() :
-			if(value == "null"):
-				return key
-		return False
+	def get_ip(self, mac_address, ip):
+		for key, value in self.list.items() :	#on verifie que le client n'as pas deja une ip
+			if(value == mac_address):			#si oui on retourne l'ip qui lui a ete precedement attribue 
+				return key						
 
-	def get_ip(self, mac_address):
-		for key, value in self.list.items() :
-			if(value == mac_address):
-				return key
+		if(ip != False):						#si on demande une adresse specifique alors on regarde si elle est deja attribue 
+			if(self.list.get(ip) == "null"):	#si libre on renvoie l'adresse specifiee
+				return ip 						
 
-		return self.get_new_ip()
+		return self.get_free_ip()				#sinon on appele la fonction d'allocation d'ip
+
+	def get_free_ip(self):						
+		for key, value in self.list.items() :	#on cherche une ip disponible
+			if(value == "null"):				#on retourne l'adresse libre trouvee
+				return key
+		return False							#il n'y a plus d'adresse dispo on renvoie False
 
 	def print_vector(self):
 		print("IP ADDRESS  |  MAC ADRESS")

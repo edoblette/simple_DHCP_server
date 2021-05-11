@@ -1,4 +1,5 @@
 import socket, uuid
+from ipaddress import ip_address
 import argparse
 
 MAX_BYTES = 1024
@@ -79,7 +80,7 @@ class DHCP_client(object):
 		CHADDR5 = bytes(192)
 		Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
 		DHCPOptions1 = bytes([53 , 1 , 1])
-		DHCPOptions2 = bytes([50 , 4 , 0xC0, 0xA8, 0x01, 0x64])
+		DHCPOptions2 = bytes([50 , 4 ]) + socket.inet_aton('0.0.0.100') # a virer
 		ENDMARK = bytes([0xff])
 
 		print("adresse mac est :")
