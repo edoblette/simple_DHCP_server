@@ -8,9 +8,10 @@ clientPort = 68
 
 class serverDHCP(object):
 
-	def server(self, _network, _subnet_mask, _range, _time ):
+	def server(self, _network, _gateway, _subnet_mask, _range, _time ):
 		self.server 
 		self.network = _network
+		self.gateway = _gateway
 		self.subnet_mask = _subnet_mask
 		self.ip_range = _range
 		self.lease_time = _time
@@ -38,9 +39,9 @@ class serverDHCP(object):
 			
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
 				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
+				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
-					data = serverDHCP.set_offer(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
+					data = serverDHCP.set_offer(self, xid, ciaddr, chaddr, magic_cookie, ip)
 					server.sendto(data, dest)
 				else:
 					print(serverDHCP.error_msg(0))
@@ -48,12 +49,12 @@ class serverDHCP(object):
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
 				print("Receive DHCP request.")
-				ip = addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
+				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
-					data = serverDHCP.pack_get(xid, ciaddr, chaddr, magic_cookie, ip, server_ip, subnet_mask)
-					addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
+					data = serverDHCP.pack_get(self, xid, ciaddr, chaddr, magic_cookie, ip)
+					self.addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
 					server.sendto(data, dest)
-					addr_manager.print_vector()
+					self.addr_manager.print_vector()
 				else:
 					print(serverDHCP.error_msg(0))
 		pass	
@@ -84,7 +85,7 @@ class serverDHCP(object):
 
 		return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-	def set_offer(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
+	def set_offer(self, xid, ciaddr, chaddr, magicookie, ip):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -94,22 +95,22 @@ class serverDHCP(object):
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr
 		YIADDR = inet_aton(ip) #adresse a donner
-		SIADDR = inet_aton(server_ip)
+		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		magic_cookie = magicookie
 		DHCPoptions1 = bytes([53, 1, 2])
-		DHCPoptions2 = bytes([1 , 4]) + inet_aton(subnet_mask)# subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip) # server_ip
-		DHCPOptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPOptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)# subnet_mask 255.255.255.0
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) # gateway/router
+		DHCPOptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
+		DHCPOptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) # DHCP server
 		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
 		return package
 
-	def pack_get(xid, ciaddr, chaddr, magicookie, ip, server_ip, subnet_mask):
+	def pack_get(self, xid, ciaddr, chaddr, magicookie, ip):
 		OP = bytes([0x02])
 		HTYPE = bytes([0x01])
 		HLEN = bytes([0x06])
@@ -119,15 +120,15 @@ class serverDHCP(object):
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr 
 		YIADDR = inet_aton(ip) #adresse a donner
-		SIADDR = inet_aton(server_ip)
+		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		Magiccookie = magicookie
 		DHCPoptions1 = bytes([53 , 1 , 5]) #DHCP ACK(value = 5)
-		DHCPoptions2 = bytes([1 , 4]) + inet_aton(subnet_mask)# subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(server_ip)
-		DHCPoptions4 = bytes([51 , 4]) + ((lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPoptions5 = bytes([54 , 4]) + inet_aton(server_ip) # DHCP server
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)# subnet_mask 255.255.255.0
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) # gateway/router
+		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
+		DHCPoptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) # DHCP server
 		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
 		ENDMARK = bytes([0xff])
 
@@ -214,13 +215,13 @@ class IpVector(object):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument("network", type=str, help="your network")
+	parser.add_argument("gateway", type=str, help="your gateway/router")
 	parser.add_argument("submask", type=str, help="network submask")
 	parser.add_argument("range", type=int, help="IPs range")
 	parser.add_argument("time", type=int, help="lease time")
 	args = parser.parse_args()
-	print(args.network)
 
 	dhcp_server = serverDHCP()
-	dhcp_server.server(args.network, args.submask, args.range, args.time)
+	dhcp_server.server(args.network, args.gateway, args.submask, args.range, args.time)
 	dhcp_server.start()
     
