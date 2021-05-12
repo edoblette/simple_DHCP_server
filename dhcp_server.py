@@ -17,6 +17,8 @@ class serverDHCP(object):
 		self.broadcast_address = self.addr_manager.get_broadcast_adress()
 		self.lease_time = _time
 		self.dns = ""
+		self.running = True
+		self.server_option = 0
 
 	def start(self):
 		server = socket(AF_INET, SOCK_DGRAM)
@@ -24,9 +26,9 @@ class serverDHCP(object):
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
 		server.bind((self.server_ip, serverPort))
 
-		while True:
+		while self.running:
 			dest = ('<broadcast>', clientPort)
-			print("... Waiting for DHCP paquets ... ")
+			self.info_msg("... Waiting for DHCP paquets ... ")
 
 			packet, address = server.recvfrom(MAX_BYTES)
 			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
@@ -40,31 +42,41 @@ class serverDHCP(object):
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
 			
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
-				print("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
+				self.info_msg("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
 				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
-					data = serverDHCP.set_offer(self, xid, ciaddr, chaddr, magic_cookie, ip)
+					data = self.set_offer( xid, ciaddr, chaddr, magic_cookie, ip)
 					server.sendto(data, dest)
 				else:
-					print(serverDHCP.error_msg(0))
+					self.info_msg(serverDHCP.error_msg(0))
 
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
-				print("Receive DHCP request.")
+				self.info_msg("Receive DHCP request.")
 				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
-					data = serverDHCP.pack_get(self, xid, ciaddr, chaddr, magic_cookie, ip)
+					data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
 					self.addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
 					server.sendto(data, dest)
-					self.addr_manager.print_vector()
+					self.info_msg(self.addr_manager.get_ip_usage())
 				else:
-					print(serverDHCP.error_msg(0))
+					self.info_msg(serverDHCP.error_msg(0))
 		pass	
 
 	def gui(self):
-		while True:
-			request = input("Server info:")
-			print(request)
+		while self.running:
+			request = input("Server info:").lower()
+			if(request == "stop"):
+				self.running = False
+
+			if(request == "quiet"):
+				self.server_option = 0
+
+			if(request == "verbose"):
+				self.server_option = 1
+
+			if(request == "usage"):
+				print(self.addr_manager.get_ip_usage())
 		pass
 
 	#### Server Methods
@@ -143,6 +155,13 @@ class serverDHCP(object):
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
 		return package
 
+	def info_msg(self, message):
+		if(self.server_option == 1):
+			print("{0}".format(message))
+			
+		# ajouter le write du fichier lo ici 
+		pass
+
 	def error_msg(type_error):
 		error = {
 				0:'No more IPs available',
@@ -211,12 +230,12 @@ class IpVector(object):
 				return key
 		return False							#il n'y a plus d'adresse dispo on renvoie False
 
-	def print_vector(self):
-		print("IP ADDRESS  |  MAC ADRESS")
-		print("-----------------------------")
-		for key, value in sorted(self.list.items()) :
+	def get_ip_usage(self):
+		package = "IP ADDRESSES  |  MAC ADDRESSES \n ----------------------------- \n"
+		for key, value in sorted(self.list.items(), key=lambda x: x[0]) :
 			if(value != "null"):
-				print (key, value)
+				package += ("(" + key + ") at " + value + '\n')
+		return package
 
 
 if __name__ == '__main__':
@@ -233,13 +252,15 @@ if __name__ == '__main__':
 
 	# creating threads
 	server_thread = threading.Thread(target=dhcp_server.start, name='server')
-	#server_gui = threading.Thread(target=dhcp_server.gui, name='gui')
+	server_gui = threading.Thread(target=dhcp_server.gui, name='gui')
   
 	# starting threads
+	server_thread.daemon = True
+	server_gui.daemon = True
 	server_thread.start()
-	#server_gui.start()
+	server_gui.start()
 
 	# wait until all threads finish
 	server_thread.join()
-	#server_gui.join()
+	server_gui.join()
     
