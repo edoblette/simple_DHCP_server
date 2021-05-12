@@ -1,6 +1,6 @@
 from socket import *
 from ipaddress import ip_address
-import re, argparse
+import re, argparse, threading
 
 MAX_BYTES = 4096
 serverPort = 67
@@ -33,7 +33,11 @@ class serverDHCP(object):
 			packet, address = server.recvfrom(MAX_BYTES)
 			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
 			dhcpMessageType = dhcpoptions[2] 																	#Type de message reçu
-			dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[5:9]) if (dhcpoptions[3] == 50) else False  #si pas d'adresse demande return false
+			dhcpRequestedIp = False
+			for i in range(len(dhcpoptions)):
+				if(dhcpoptions[i:i+2] == bytes([50, 4])):
+					dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[i+2:i+6]) 							#on récupère l'adresse demandée
+		
 
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
 			
@@ -58,6 +62,12 @@ class serverDHCP(object):
 				else:
 					print(serverDHCP.error_msg(0))
 		pass	
+
+	def gui(self):
+		while True:
+			request = input("Server info:")
+			print(request)
+		pass
 
 	#### Server Methods
 	def ip_addr_format(address):
@@ -223,5 +233,16 @@ if __name__ == '__main__':
 
 	dhcp_server = serverDHCP()
 	dhcp_server.server(args.network, args.gateway, args.submask, args.range, args.time)
-	dhcp_server.start()
+
+	# creating threads
+	server_thread = threading.Thread(target=dhcp_server.start, name='server')
+	#server_gui = threading.Thread(target=dhcp_server.gui, name='gui')
+  
+	# starting threads
+	server_thread.start()
+	#server_gui.start()
+
+	# wait until all threads finish
+	server_thread.join()
+	#server_gui.join()
     
