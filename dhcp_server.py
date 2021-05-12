@@ -8,23 +8,21 @@ clientPort = 68
 
 class serverDHCP(object):
 
-	def server(self, _network, _gateway, _subnet_mask, _range, _time ):
+	def server(self, _server_ip, _gateway, _subnet_mask, _range, _time ):
 		self.server 
-		self.network = _network
+		self.server_ip = _server_ip
 		self.gateway = _gateway
 		self.subnet_mask = _subnet_mask
-		self.ip_range = _range
-		self.lease_time = _time
-		self.addr_manager = IpVector(_network, _subnet_mask, _range )
-		self.server_ip = self.addr_manager.get_server_ip()
+		self.addr_manager = IpVector(_server_ip, _gateway, _subnet_mask, _range )
 		self.broadcast_address = self.addr_manager.get_broadcast_adress()
+		self.lease_time = _time
 		self.dns = ""
 
 	def start(self):
 		server = socket(AF_INET, SOCK_DGRAM)
 		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
 		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind((self.network, serverPort))
+		server.bind((self.server_ip, serverPort))
 
 		while True:
 			dest = ('<broadcast>', clientPort)
@@ -153,31 +151,34 @@ class serverDHCP(object):
 		return error.get(type_error, "Unexpected error")
 
 class IpVector(object):
-	def __init__(self, _network, _subnet_mask, _range):
-		addr = [int(x) for x in _network.split(".")]
+	def __init__(self, _server_ip, _gateway, _subnet_mask, _range):
+		addr = [int(x) for x in _server_ip.split(".")]
 		mask = [int(x) for x in _subnet_mask.split(".")]
 		cidr = sum((bin(x).count('1') for x in mask))
 		netw = [addr[i] & mask[i] for i in range(4)]
 		bcas = [(addr[i] & mask[i]) | (255^mask[i]) for i in range(4)]
-		server = [bcas[0], bcas[1], bcas[2], bcas[3]-1] #broadcast adress - 1
 		print("Network: {0}".format('.'.join(map(str, netw))))
-		print("Server: {0}".format('.'.join(map(str, server))))
+		print("DHCP server: {0}".format(_server_ip))
+		print("Gateway/Router: {0}".format(_gateway))
 		print("Mask: {0}".format('.'.join(map(str, mask))))
 		print("Cidr: {0}".format(cidr))
 		print("Broadcast: {0}".format('.'.join(map(str, bcas))))
 		#convert to str format
 		netw = '.'.join(map(str, netw))
 		bcas = '.'.join(map(str, bcas))
-		server = '.'.join(map(str, server))
-		start_addr = int(ip_address(netw).packed.hex(), 16) + 1 #router alway at x.x.x.0
-		end_addr = int(ip_address(netw).packed.hex(), 16) + 1 + _range 
-		end_addr = int(ip_address(server).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + 1 + _range) > int(ip_address(server).packed.hex(), 16) else (int(ip_address(netw).packed.hex(), 16) + 1 + _range) #ternary operation for range limit 
+		start_addr = int(ip_address(netw).packed.hex(), 16)
+		end_addr = int(ip_address(bcas).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + _range) > int(ip_address(bcas).packed.hex(), 16) else int(ip_address(netw).packed.hex(), 16) + _range #ternary operation for range limit 
 		self.list = {}
-		self.server = server
 		self.broadcast = bcas
 		self.allocated = 0 
+
 		for ip in range(start_addr, end_addr):
 			self.add_ip(ip_address(ip).exploded, 'null') 
+
+		self.update_ip(_gateway, "gateway")		#on ajoute le gateway/router
+		self.update_ip(_server_ip, "DHCP server")	#on ajoute le server DHCP
+
+
 
     #method SET
 	def add_ip(self, ip, mac_address):			#fait le lien clee/valeur entre l'ip et l'adresse mac
@@ -189,10 +190,6 @@ class IpVector(object):
 		self.list.update({ip: mac_address})		#update l'adresse mac liee a l'adresse ip
 		self.allocated =- 1						#decremente le compteur d'adresse disponible
 		return
-
-    #method GET
-	def get_server_ip(self):					#renvoie l'adresse du serveur
-		return self.server
 
 	def get_broadcast_adress(self):				#renvoie l'adresse broadcast
 		return self.broadcast
@@ -217,22 +214,22 @@ class IpVector(object):
 	def print_vector(self):
 		print("IP ADDRESS  |  MAC ADRESS")
 		print("-----------------------------")
-		for key, value in self.list.items() :
+		for key, value in sorted(self.list.items()) :
 			if(value != "null"):
 				print (key, value)
 
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
-	parser.add_argument("network", type=str, help="your network")
-	parser.add_argument("gateway", type=str, help="your gateway/router")
+	parser.add_argument("server", type=str, help="your ip")
+	parser.add_argument("gateway", type=str, help="your gateway/router ip")
 	parser.add_argument("submask", type=str, help="network submask")
 	parser.add_argument("range", type=int, help="IPs range")
 	parser.add_argument("time", type=int, help="lease time")
 	args = parser.parse_args()
 
 	dhcp_server = serverDHCP()
-	dhcp_server.server(args.network, args.gateway, args.submask, args.range, args.time)
+	dhcp_server.server(args.server, args.gateway, args.submask, args.range, args.time)
 
 	# creating threads
 	server_thread = threading.Thread(target=dhcp_server.start, name='server')
