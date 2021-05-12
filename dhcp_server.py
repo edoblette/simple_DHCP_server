@@ -1,6 +1,7 @@
 from socket import *
 from ipaddress import ip_address
 import re, argparse, threading
+import datetime from datetime
 
 MAX_BYTES = 4096
 serverPort = 67
@@ -31,12 +32,12 @@ class serverDHCP(object):
 			self.info_msg("... Waiting for DHCP paquets ... ")
 
 			packet, address = server.recvfrom(MAX_BYTES)
-			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
-			dhcpMessageType = dhcpoptions[2] 																	#Type de message reçu
+			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 					#Récupère les options du packet reçu
+			dhcpMessageType = dhcpoptions[2] 							#Type de message reçu
 			dhcpRequestedIp = False
 			for i in range(len(dhcpoptions)):
 				if(dhcpoptions[i:i+2] == bytes([50, 4])):
-					dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[i+2:i+6]) 							#on récupère l'adresse demandée
+					dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[i+2:i+6]) 	#on récupère l'adresse demandée
 		
 
 			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
@@ -125,17 +126,17 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr
-		YIADDR = inet_aton(ip) #adresse a donner
+		YIADDR = inet_aton(ip) 									#adresse a donner
 		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		magic_cookie = magicookie
 		DHCPoptions1 = bytes([53, 1, 2])
-		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)# subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) # gateway/router
-		DHCPOptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPOptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) # DHCP server
-		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)				# subnet_mask 255.255.255.0
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
+		DHCPOptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
+		DHCPOptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) 				# DHCP server
+		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) 					#DNS servers
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
@@ -150,17 +151,17 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr 
-		YIADDR = inet_aton(ip) #adresse a donner
+		YIADDR = inet_aton(ip) 									#adresse a donner
 		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		Magiccookie = magicookie
-		DHCPoptions1 = bytes([53 , 1 , 5]) #DHCP ACK(value = 5)
-		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)# subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) # gateway/router
-		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) #86400s(1, day) IP address lease time
-		DHCPoptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) # DHCP server
-		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) #DNS servers
+		DHCPoptions1 = bytes([53 , 1 , 5]) 							#DHCP ACK(value = 5)
+		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)				# subnet_mask 255.255.255.0
+		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
+		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
+		DHCPoptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) 				# DHCP server
+		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) 					#DNS servers
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
@@ -169,8 +170,11 @@ class serverDHCP(object):
 	def info_msg(self, message):
 		if(self.server_option == 1):
 			print("{0}".format(message))
-
-		# ajouter le write du fichier lo ici 
+ 
+		now = datetime.now()
+		date_time = now.strftime("%m/%d/%Y %H:%M:%S")
+		f.write("%s | %s\n" % (date_time, message))
+		
 		pass
 
 	def error_msg(type_error):
@@ -213,12 +217,12 @@ class IpVector(object):
     #method SET
 	def add_ip(self, ip, mac_address):			#fait le lien clee/valeur entre l'ip et l'adresse mac
 		self.list[ip] = mac_address
-		self.allocated += 1						#incremente le compteur d'adresse disponible
+		self.allocated += 1				#incremente le compteur d'adresse disponible
 		return
 
 	def update_ip(self, ip, mac_address):
 		if mac_address not in self.list.values():
-			self.allocated -= 1					#decremente le compteur d'adresse disponible
+			self.allocated -= 1			#decremente le compteur d'adresse disponible
 
 		self.list.update({ip: mac_address})		#update l'adresse mac liee a l'adresse ip
 		return
@@ -227,21 +231,21 @@ class IpVector(object):
 		return self.broadcast
 
 	def get_ip(self, mac_address, ip):
-		for key, value in self.list.items() :	#on verifie que le client n'as pas deja une ip
-			if(value == mac_address):			#si oui on retourne l'ip qui lui a ete precedement attribue 
+		for key, value in self.list.items() :		#on verifie que le client n'as pas deja une ip
+			if(value == mac_address):		#si oui on retourne l'ip qui lui a ete precedement attribue 
 				return key						
 
-		if(ip != False):						#si on demande une adresse specifique alors on regarde si elle est deja attribue 
+		if(ip != False):				#si on demande une adresse specifique alors on regarde si elle est deja attribue 
 			if(self.list.get(ip) == "null"):	#si libre on renvoie l'adresse specifiee
 				return ip 						
 
-		return self.get_free_ip()				#sinon on appele la fonction d'allocation d'ip
+		return self.get_free_ip()			#sinon on appele la fonction d'allocation d'ip
 
 	def get_free_ip(self):						
-		for key, value in self.list.items() :	#on cherche une ip disponible
-			if(value == "null"):				#on retourne l'adresse libre trouvee
+		for key, value in self.list.items() :		#on cherche une ip disponible
+			if(value == "null"):			#on retourne l'adresse libre trouvee
 				return key
-		return False							#il n'y a plus d'adresse dispo on renvoie False
+		return False					#il n'y a plus d'adresse dispo on renvoie False
 
 	def get_ip_allocated(self):
 		package = "IP ADDRESSES  |  MAC ADDRESSES \n ----------------------------- \n"
@@ -266,6 +270,8 @@ if __name__ == '__main__':
 	parser.add_argument("range", type=int, help="IPs range")
 	parser.add_argument("time", type=int, help="lease time")
 	args = parser.parse_args()
+	
+	f = open("serverlog.txt", "a")
 
 	dhcp_server = serverDHCP()
 	dhcp_server.server(args.server, args.gateway, args.submask, args.range, args.time)
