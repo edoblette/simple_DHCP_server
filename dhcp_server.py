@@ -58,16 +58,29 @@ class serverDHCP(object):
 					data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
 					self.addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
 					server.sendto(data, dest)
-					self.info_msg(self.addr_manager.get_ip_usage())
+					self.info_msg(self.addr_manager.get_ip_allocated())
 				else:
 					self.info_msg(serverDHCP.error_msg(0))
 		pass	
 
 	def gui(self):
 		while self.running:
-			request = input("Server info:").lower()
+			request = input("Server info: ").lower()
+			if(request == "help"):
+				print("[ stop ] : stop the DHCP server ")
+				print("[ usage ] : show ip assignment ")
+				print("[ available ] : show ip still available ")
+				print("[ quiet ] : hide the log informations ")
+				print("[ verbose ] : show the log informations ")
+
 			if(request == "stop"):
 				self.running = False
+
+			if(request == "usage"):
+				print(self.addr_manager.get_ip_allocated())
+
+			if(request == "available"):
+				print(self.addr_manager.get_ip_available())
 
 			if(request == "quiet"):
 				self.server_option = 0
@@ -75,8 +88,6 @@ class serverDHCP(object):
 			if(request == "verbose"):
 				self.server_option = 1
 
-			if(request == "usage"):
-				print(self.addr_manager.get_ip_usage())
 		pass
 
 	#### Server Methods
@@ -158,7 +169,7 @@ class serverDHCP(object):
 	def info_msg(self, message):
 		if(self.server_option == 1):
 			print("{0}".format(message))
-			
+
 		# ajouter le write du fichier lo ici 
 		pass
 
@@ -202,12 +213,14 @@ class IpVector(object):
     #method SET
 	def add_ip(self, ip, mac_address):			#fait le lien clee/valeur entre l'ip et l'adresse mac
 		self.list[ip] = mac_address
-		++self.allocated						#incremente le compteur d'adresse disponible
+		self.allocated += 1						#incremente le compteur d'adresse disponible
 		return
 
 	def update_ip(self, ip, mac_address):
+		if mac_address not in self.list.values():
+			self.allocated -= 1					#decremente le compteur d'adresse disponible
+
 		self.list.update({ip: mac_address})		#update l'adresse mac liee a l'adresse ip
-		self.allocated =- 1						#decremente le compteur d'adresse disponible
 		return
 
 	def get_broadcast_adress(self):				#renvoie l'adresse broadcast
@@ -230,11 +243,18 @@ class IpVector(object):
 				return key
 		return False							#il n'y a plus d'adresse dispo on renvoie False
 
-	def get_ip_usage(self):
+	def get_ip_allocated(self):
 		package = "IP ADDRESSES  |  MAC ADDRESSES \n ----------------------------- \n"
 		for key, value in sorted(self.list.items(), key=lambda x: x[0]) :
 			if(value != "null"):
 				package += ("(" + key + ") at " + value + '\n')
+		return package
+
+	def get_ip_available(self):
+		package = "IP availables : " + str(self.allocated) + '\n'
+		for key, value in self.list.items() :
+			if(value == "null"):
+				package += ("(" + key + ") \n")
 		return package
 
 
