@@ -155,8 +155,8 @@ class serveurDHCP(object):
             for b in range(0, len(dhcpoptions)):
                 if(dhcpoptions[b:b+3] == bytes([50, 4, 0xc0])): #on check l'option 50
                     requested_Address = inet_ntoa(dhcpoptions[b+2:b+6]) #on récupère l'adresse demandée
-                    print("What the fuck is going on :")
-                    print(dhcpoptions[b:b+6].hex())
+                    #print("What the fuck is going on :")
+                    #print(dhcpoptions[b:b+6].hex())
 
             if (requested_Address in usedIps) and (clientMacAddress not in usedMacAddresses):
                 dataPack = set_pack(xid, chaddr, magic_cookie, lease_time, server_address, 6, requested_Address) #nack
