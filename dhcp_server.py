@@ -1,7 +1,7 @@
 from socket import *
 from ipaddress import ip_address
 import re, argparse, threading
-import datetime from datetime
+from datetime import datetime
 
 MAX_BYTES = 4096
 serverPort = 67
@@ -33,11 +33,11 @@ class serverDHCP(object):
 
 			packet, address = self.server.recvfrom(MAX_BYTES)
 			dhcpoptions = self.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
-			dhcpMessageType = dhcpoptions[2] 																	    #Type de message reçu
+			dhcpMessageType = dhcpoptions[2] 														 	#Type de message reçu
 			dhcpRequestedIp = False
 			for i in range(len(dhcpoptions)):
 				if(dhcpoptions[i:i+2] == bytes([50, 4])):
-					dhcpRequestedIp = self.ip_addr_format(dhcpoptions[i+2:i+6]) 			#on récupère l'adresse demandée
+					dhcpRequestedIp = self.ip_addr_format(dhcpoptions[i+2:i+6]) 						#on récupère l'adresse demandée
 		
 
 			xid, ciaddr, chaddr, magic_cookie = self.packet_analyser(packet)[4], self.packet_analyser(packet)[7], self.packet_analyser(packet)[11], self.packet_analyser(packet)[12]
@@ -53,7 +53,7 @@ class serverDHCP(object):
 
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
-				self.info_msg("Receive DHCP request.")
+				self.info_msg("Receive DHCP request.(" + self.mac_addr_format(chaddr) + ')')
 				ip = self.addr_manager.get_ip(str(self.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
 					data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
@@ -64,32 +64,64 @@ class serverDHCP(object):
 					self.info_msg(self.error_msg(0))
 		pass	
 
+	def stop(self):
+		self.running = False					
+		self.info_msg("--- DHCP server stoped ---")
+		self.server.sendto(bytes(590), ('<broadcast>', serverPort))
+		pass
+
 	def gui(self):
 		while self.running:
 			request = input("Server info: ").lower()
 			if(request == "help"):
-				print("[ stop ] : stop the DHCP server ")
+				print("[ stop ]	: stop the DHCP server ")
 				print("[ usage ] : show ip assignment ")
 				print("[ available ] : show ip still available ")
+				print("[ free <mac adresse> ] : free/detach ip address from mac adresse ")
+				print("[ remove <ip adresse> ] : Remove the ip address from the addresses available by the server")
 				print("[ quiet ] : hide the log informations ")
 				print("[ verbose ] : show the log informations ")
+				print("[ erase ] : erase log file ")
 
-			if(request == "stop"):
-				self.running = False
-				self.server.sendto(bytes(590), ('<broadcast>', serverPort))
+			elif(request == "stop"):
+				self.stop()
 
-			if(request == "usage"):
+			elif(request == "usage"):
 				print(self.addr_manager.get_ip_allocated())
 
-			if(request == "available"):
+			elif(request == "available"):
 				print(self.addr_manager.get_ip_available())
 
-			if(request == "quiet"):
+			elif(request.startswith('free') == True):
+				mac_addr = request.split(' ', 2)
+				if (len(mac_addr) == 2):
+					opVal, ip = self.addr_manager.detach_ip(mac_addr[1])
+					if(opVal == True):
+						self.info_msg("[MANUAL] Detach : " + mac_addr[1] + " at " + ip )
+						print(mac_addr[1] + " at " + ip + " detached")
+					else:
+						print(self.error_msg(1))
+
+			elif(request.startswith('remove') == True):
+				ip_addr = request.split(' ', 2)
+				if (len(ip_addr) == 2):
+					opVal = self.addr_manager.remove_ip(ip_addr[1])
+					if(opVal == True):
+						self.info_msg("[MANUAL] Remove : " + ip_addr[1])
+						print(ip_addr[1] + " removed")
+					else:
+						print(self.error_msg(1))
+
+			elif(request == "quiet"):
 				self.server_option = 0
 
-			if(request == "verbose"):
+			elif(request == "verbose"):
 				self.server_option = 1
 
+			elif(request == "erase"):
+				self.clearLog()
+			else:
+				print("'" + request + "'" + " is not a valid command. See 'help'.")
 		pass
 
 	#### Server Methods
@@ -127,7 +159,7 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr
-		YIADDR = inet_aton(ip) 									#adresse a donner
+		YIADDR = inet_aton(ip) 													#adresse a donner
 		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
@@ -152,12 +184,12 @@ class serverDHCP(object):
 		SECS = bytes([0x00, 0x00])
 		FLAGS = bytes([0x00, 0x00])
 		CIADDR = ciaddr 
-		YIADDR = inet_aton(ip) 									#adresse a donner
+		YIADDR = inet_aton(ip) 													#adresse a donner
 		SIADDR = inet_aton(self.server_ip)
 		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
 		CHADDR = chaddr
 		Magiccookie = magicookie
-		DHCPoptions1 = bytes([53 , 1 , 5]) 							#DHCP ACK(value = 5)
+		DHCPoptions1 = bytes([53 , 1 , 5]) 										#DHCP ACK(value = 5)
 		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)				# subnet_mask 255.255.255.0
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
 		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
@@ -174,16 +206,21 @@ class serverDHCP(object):
  
 		now = datetime.now()
 		date_time = now.strftime("%m/%d/%Y %H:%M:%S")
-		f.write("%s | %s\n" % (date_time, message))
-		
+		logFile.write("%s | %s\n" % (date_time, message.replace('\n', "\n\t\t")))
+		logFile.flush()
 		pass
 
 	def error_msg(self, type_error):
 		error = {
-				0:'No more IPs available',
-				1:'Monday'
+				0:'ERROR (No more IPs available)',
+				1:'ERROR (Address don\'t exist )',
+				2:'Monday'
 		}
 		return error.get(type_error, "Unexpected error")
+
+	def clearLog(self):
+	    logFile.seek(0)
+	    logFile.truncate()
 
 class IpVector(object):
 	def __init__(self, _server_ip, _gateway, _subnet_mask, _range):
@@ -195,9 +232,9 @@ class IpVector(object):
 		print("Network: {0}".format('.'.join(map(str, netw))))
 		print("DHCP server: {0}".format(_server_ip))
 		print("Gateway/Router: {0}".format(_gateway))
+		print("Broadcast: {0}".format('.'.join(map(str, bcas))))
 		print("Mask: {0}".format('.'.join(map(str, mask))))
 		print("Cidr: {0}".format(cidr))
-		print("Broadcast: {0}".format('.'.join(map(str, bcas))))
 		#convert to str format
 		netw = '.'.join(map(str, netw))
 		bcas = '.'.join(map(str, bcas))
@@ -205,61 +242,75 @@ class IpVector(object):
 		end_addr = int(ip_address(bcas).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + 1 +_range) > int(ip_address(bcas).packed.hex(), 16) else int(ip_address(netw).packed.hex(), 16) + 1 + _range #ternary operation for range limit 
 		self.list = {}
 		self.broadcast = bcas
-		self.allocated = 0 
+		self.allocated = 2							#2 on compte le routeur et le serveur
 
 		for ip in range(start_addr, end_addr):
 			self.add_ip(ip_address(ip).exploded, 'null') 
 
-		self.update_ip(_gateway, "gateway")		#on ajoute le gateway/router
+		self.update_ip(_gateway, "gateway")			#on ajoute le gateway/router
 		self.update_ip(_server_ip, "DHCP server")	#on ajoute le server DHCP
 
-
-
     #method SET
-	def add_ip(self, ip, mac_address):			#fait le lien clee/valeur entre l'ip et l'adresse mac
+	def add_ip(self, ip, mac_address):				#fait le lien clee/valeur entre l'ip et l'adresse mac
 		self.list[ip] = mac_address
-		self.allocated += 1				#incremente le compteur d'adresse disponible
+		self.allocated += 1							#incremente le compteur d'adresse disponible
 		return
 
 	def update_ip(self, ip, mac_address):
 		if mac_address not in self.list.values():
-			self.allocated -= 1			#decremente le compteur d'adresse disponible
+			self.allocated -= 1						#decremente le compteur d'adresse disponible
 
-		self.list.update({ip: mac_address})		#update l'adresse mac liee a l'adresse ip
+		self.list.update({ip: mac_address})			#update l'adresse mac liee a l'adresse ip
 		return
 
-	def get_broadcast_adress(self):				#renvoie l'adresse broadcast
+	def remove_ip(self, ip):
+		for key, value in self.list.items() :		#on verifie que l'ip existe
+			if(key == ip):							#si oui on supprime l'adresse ip
+				self.list.pop(ip)
+				self.allocated -= 1					#decremente le compteur d'adresse disponible
+				return True
+		return False
+
+	def detach_ip(self, mac_address):
+		for key, value in self.list.items() :		#on verifie que le client existe
+			if(value == mac_address):				#si oui on remplace le client par 'null'
+				print("addr " + mac_address)
+				self.add_ip(key, 'null')
+				return True, key
+		return False, 0
+
+	def get_broadcast_adress(self):					#renvoie l'adresse broadcast
 		return self.broadcast
 
 	def get_ip(self, mac_address, ip):
 		for key, value in self.list.items() :		#on verifie que le client n'as pas deja une ip
-			if(value == mac_address):		#si oui on retourne l'ip qui lui a ete precedement attribue 
+			if(value == mac_address):				#si oui on retourne l'ip qui lui a ete precedement attribue 
 				return key						
 
-		if(ip != False):				#si on demande une adresse specifique alors on regarde si elle est deja attribue 
-			if(self.list.get(ip) == "null"):	#si libre on renvoie l'adresse specifiee
+		if(ip != False):							#si on demande une adresse specifique alors on regarde si elle est deja attribue 
+			if(self.list.get(ip) == "null"):		#si libre on renvoie l'adresse specifiee
 				return ip 						
 
-		return self.get_free_ip()			#sinon on appele la fonction d'allocation d'ip
+		return self.get_free_ip()					#sinon on appele la fonction d'allocation d'ip
 
 	def get_free_ip(self):						
 		for key, value in self.list.items() :		#on cherche une ip disponible
-			if(value == "null"):			#on retourne l'adresse libre trouvee
+			if(value == "null"):					#on retourne l'adresse libre trouvee
 				return key
-		return False					#il n'y a plus d'adresse dispo on renvoie False
+		return False								#il n'y a plus d'adresse dispo on renvoie False
 
 	def get_ip_allocated(self):
-		package = "IP ADDRESSES  |  MAC ADDRESSES \n ----------------------------- \n"
+		package = "IP ADDRESSES  |  MAC ADDRESSES \n\t----------------------------- \n"
 		for key, value in sorted(self.list.items(), key=lambda x: x[0]) :
 			if(value != "null"):
-				package += ("(" + key + ") at " + value + '\n')
+				package += ("\t(" + key + ") at " + value + '\n')
 		return package
 
 	def get_ip_available(self):
 		package = "IP availables : " + str(self.allocated) + '\n'
 		for key, value in self.list.items() :
 			if(value == "null"):
-				package += ("(" + key + ") \n")
+				package += ("\t(" + key + ") \n")
 		return package
 
 
@@ -272,7 +323,7 @@ if __name__ == '__main__':
 	parser.add_argument("time", type=int, help="lease time")
 	args = parser.parse_args()
 	
-	f = open("serverlog.txt", "a")
+	logFile = open("serverlog.txt", "a")
 
 	dhcp_server = serverDHCP()
 	dhcp_server.server(args.server, args.gateway, args.submask, args.range, args.time)
