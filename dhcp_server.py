@@ -21,46 +21,46 @@ class serverDHCP(object):
 		self.server_option = 0
 
 	def start(self):
-		server = socket(AF_INET, SOCK_DGRAM)
-		server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
-		server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
-		server.bind((self.server_ip, serverPort))
+		self.server = socket(AF_INET, SOCK_DGRAM)
+		self.server.setsockopt(SOL_IP, SO_REUSEADDR, 1)
+		self.server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
+		self.server.bind((self.server_ip, serverPort))
 
 		while self.running:
 			dest = ('<broadcast>', clientPort)
 			self.info_msg("... Waiting for DHCP paquets ... ")
 
-			packet, address = server.recvfrom(MAX_BYTES)
-			dhcpoptions = serverDHCP.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
+			packet, address = self.server.recvfrom(MAX_BYTES)
+			dhcpoptions = self.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
 			dhcpMessageType = dhcpoptions[2] 																	#Type de message reçu
 			dhcpRequestedIp = False
 			for i in range(len(dhcpoptions)):
 				if(dhcpoptions[i:i+2] == bytes([50, 4])):
-					dhcpRequestedIp = serverDHCP.ip_addr_format(dhcpoptions[i+2:i+6]) 							#on récupère l'adresse demandée
+					dhcpRequestedIp = self.ip_addr_format(dhcpoptions[i+2:i+6]) 						#on récupère l'adresse demandée
 		
 
-			xid, ciaddr, chaddr, magic_cookie = serverDHCP.packet_analyser(packet)[4], serverDHCP.packet_analyser(packet)[7], serverDHCP.packet_analyser(packet)[11], serverDHCP.packet_analyser(packet)[12]
+			xid, ciaddr, chaddr, magic_cookie = self.packet_analyser(packet)[4], self.packet_analyser(packet)[7], self.packet_analyser(packet)[11], self.packet_analyser(packet)[12]
 			
 			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
-				self.info_msg("Received DHCP discovery! (" + serverDHCP.mac_addr_format(chaddr) + ')')
-				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
+				self.info_msg("Received DHCP discovery! (" + self.mac_addr_format(chaddr) + ')')
+				ip = self.addr_manager.get_ip(str(self.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
 					data = self.set_offer( xid, ciaddr, chaddr, magic_cookie, ip)
-					server.sendto(data, dest)
+					self.server.sendto(data, dest)
 				else:
-					self.info_msg(serverDHCP.error_msg(0))
+					self.info_msg(self.error_msg(0))
 
 
 			if(dhcpMessageType == 3): #Si c'est un DHCP Request
 				self.info_msg("Receive DHCP request.")
-				ip = self.addr_manager.get_ip(str(serverDHCP.mac_addr_format(chaddr)), dhcpRequestedIp)
+				ip = self.addr_manager.get_ip(str(self.mac_addr_format(chaddr)), dhcpRequestedIp)
 				if(ip != False):
 					data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
-					self.addr_manager.update_ip(ip, str(serverDHCP.mac_addr_format(chaddr)))
-					server.sendto(data, dest)
+					self.addr_manager.update_ip(ip, str(self.mac_addr_format(chaddr)))
+					self.server.sendto(data, dest)
 					self.info_msg(self.addr_manager.get_ip_allocated())
 				else:
-					self.info_msg(serverDHCP.error_msg(0))
+					self.info_msg(self.error_msg(0))
 		pass	
 
 	def gui(self):
@@ -75,6 +75,7 @@ class serverDHCP(object):
 
 			if(request == "stop"):
 				self.running = False
+				self.server.sendto(bytes(590), ('<broadcast>', serverPort))
 
 			if(request == "usage"):
 				print(self.addr_manager.get_ip_allocated())
@@ -91,14 +92,14 @@ class serverDHCP(object):
 		pass
 
 	#### Server Methods
-	def ip_addr_format(address):
+	def ip_addr_format(self, address):
 		return ('{}.{}.{}.{}'.format(*bytearray(address)))
 
-	def mac_addr_format(address):
+	def mac_addr_format(self, address):
 		address = address.hex()[:16]
 		return (':'.join(address[i:i+2] for i in range(0,12,2)))
 
-	def packet_analyser(packet): #avec cette méthode on récupère le message discover d'un client
+	def packet_analyser(self, packet): #avec cette méthode on récupère le message discover d'un client
 		OP = packet[0]
 		HTYPE = packet[1]
 		HLEN = packet[2]
@@ -173,7 +174,7 @@ class serverDHCP(object):
 		# ajouter le write du fichier lo ici 
 		pass
 
-	def error_msg(type_error):
+	def error_msg(self, type_error):
 		error = {
 				0:'No more IPs available',
 				1:'Monday'
@@ -196,8 +197,8 @@ class IpVector(object):
 		#convert to str format
 		netw = '.'.join(map(str, netw))
 		bcas = '.'.join(map(str, bcas))
-		start_addr = int(ip_address(netw).packed.hex(), 16)
-		end_addr = int(ip_address(bcas).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + _range) > int(ip_address(bcas).packed.hex(), 16) else int(ip_address(netw).packed.hex(), 16) + _range #ternary operation for range limit 
+		start_addr = int(ip_address(netw).packed.hex(), 16) + 1
+		end_addr = int(ip_address(bcas).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + 1 +_range) > int(ip_address(bcas).packed.hex(), 16) else int(ip_address(netw).packed.hex(), 16) + 1 + _range #ternary operation for range limit 
 		self.list = {}
 		self.broadcast = bcas
 		self.allocated = 0 
