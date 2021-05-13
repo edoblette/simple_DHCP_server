@@ -38,30 +38,32 @@ class serverDHCP(object):
 			for i in range(len(dhcpoptions)):
 				if(dhcpoptions[i:i+2] == bytes([50, 4])):
 					dhcpRequestedIp = self.ip_addr_format(dhcpoptions[i+2:i+6]) 						#on récupère l'adresse demandée
-		
 
 			xid, ciaddr, chaddr, magic_cookie = self.packet_analyser(packet)[4], self.packet_analyser(packet)[7], self.packet_analyser(packet)[11], self.packet_analyser(packet)[12]
-			
-			if(dhcpMessageType == 1): #Si c'est un DHCP Discover
-				self.info_msg("Received DHCP discovery! (" + self.mac_addr_format(chaddr) + ')')
-				ip = self.addr_manager.get_ip(str(self.mac_addr_format(chaddr)), dhcpRequestedIp)
-				if(ip != False):
-					data = self.set_offer( xid, ciaddr, chaddr, magic_cookie, ip)
-					self.server.sendto(data, dest)
-				else:
-					self.info_msg(self.error_msg(0))
+			dhcpClientMacAddress = self.mac_addr_format(chaddr)
 
+			if(dhcpClientMacAddress not in self.addr_manager.get_banned_adresses()):					#Si le client n'est pas banni
+				if(dhcpMessageType == 1): 																#Si c'est un DHCP Discover
+					self.info_msg("Received DHCP discovery! (" + dhcpClientMacAddress + ')')
+					ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
+					if(ip != False):
+						data = self.set_offer( xid, ciaddr, chaddr, magic_cookie, ip)
+						self.server.sendto(data, dest)
+					else:
+						self.info_msg(self.error_msg(0))
 
-			if(dhcpMessageType == 3): #Si c'est un DHCP Request
-				self.info_msg("Receive DHCP request.(" + self.mac_addr_format(chaddr) + ')')
-				ip = self.addr_manager.get_ip(str(self.mac_addr_format(chaddr)), dhcpRequestedIp)
-				if(ip != False):
-					data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
-					self.addr_manager.update_ip(ip, str(self.mac_addr_format(chaddr)))
-					self.server.sendto(data, dest)
-					self.info_msg(self.addr_manager.get_ip_allocated())
-				else:
-					self.info_msg(self.error_msg(0))
+				if(dhcpMessageType == 3): 																#Si c'est un DHCP Request
+					self.info_msg("Receive DHCP request.(" + dhcpClientMacAddress + ')')
+					ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
+					if(ip != False):
+						data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
+						self.addr_manager.update_ip(ip, str(dhcpClientMacAddress))
+						self.server.sendto(data, dest)
+						self.info_msg(self.addr_manager.get_ip_allocated())
+					else:
+						self.info_msg(self.error_msg(0))
+			else:
+				self.info_msg(self.error_msg(2))
 		pass	
 
 	def stop(self):
@@ -78,7 +80,10 @@ class serverDHCP(object):
 				print("[ usage ] : show ip assignment ")
 				print("[ available ] : show ip still available ")
 				print("[ free <mac adresse> ] : free/detach ip address from mac adresse ")
-				print("[ remove <ip adresse> ] : Remove the ip address from the addresses available by the server")
+				print("[ remove <ip adresse> ] : eemove the ip address from the addresses available by the server ")
+				print("[ banned ] : show banned adresses ")
+				print("[ ban <mac adresse> ] : ban the mac address ")
+				print("[ unban <mac adresse> ] : unban the mac address ")
 				print("[ quiet ] : hide the log informations ")
 				print("[ verbose ] : show the log informations ")
 				print("[ erase ] : erase log file ")
@@ -109,6 +114,31 @@ class serverDHCP(object):
 					if(opVal == True):
 						self.info_msg("[MANUAL] Remove : " + ip_addr[1])
 						print(ip_addr[1] + " removed")
+					else:
+						print(self.error_msg(1))
+
+			elif(request == "banned"):
+				banned_list = self.addr_manager.get_banned_adresses()
+				print("Banned addresses : " + str(len(banned_list)))
+				print(*banned_list, sep = "\n")
+							
+			elif(request.startswith('ban') == True):
+				mac_addr = request.split(' ', 2)
+				if (len(mac_addr) == 2):
+					opVal = self.addr_manager.ban_addr(mac_addr[1])
+					if(opVal == True):
+						self.info_msg("[MANUAL] Ban : " + mac_addr[1]  )
+						print(mac_addr[1] + " banned")
+					else:
+						print(self.error_msg(1))
+
+			elif(request.startswith('unban') == True):
+				mac_addr = request.split(' ', 2)
+				if (len(mac_addr) == 2):
+					opVal = self.addr_manager.unban_addr(mac_addr[1])
+					if(opVal == True):
+						self.info_msg("[MANUAL] Unban : " + mac_addr[1]  )
+						print(mac_addr[1] + " unbanned")
 					else:
 						print(self.error_msg(1))
 
@@ -214,7 +244,8 @@ class serverDHCP(object):
 		error = {
 				0:'ERROR (No more IPs available)',
 				1:'ERROR (Address don\'t exist )',
-				2:'Monday'
+				2:'ERROR (Address banned )',
+				3:'Monday'
 		}
 		return error.get(type_error, "Unexpected error")
 
@@ -241,6 +272,7 @@ class IpVector(object):
 		start_addr = int(ip_address(netw).packed.hex(), 16) + 1
 		end_addr = int(ip_address(bcas).packed.hex(), 16) if (int(ip_address(netw).packed.hex(), 16) + 1 +_range) > int(ip_address(bcas).packed.hex(), 16) else int(ip_address(netw).packed.hex(), 16) + 1 + _range #ternary operation for range limit 
 		self.list = {}
+		self.banned_list = []
 		self.broadcast = bcas
 		self.allocated = 2							#2 on compte le routeur et le serveur
 
@@ -278,6 +310,21 @@ class IpVector(object):
 				self.add_ip(key, 'null')
 				return True, key
 		return False, 0
+
+	def ban_addr(self, mac_address):
+		if mac_address not in self.banned_list:		#on verifie que le client existe
+			self.banned_list.append(mac_address)	#on l'ajoute a la liste des adresse bannite
+			return True
+		return False
+
+	def unban_addr(self, mac_address):
+		if mac_address in self.banned_list:			#on verifie que le client existe
+			self.banned_list.remove(mac_address)	#on l'ajoute a la liste des adresse bannite
+			return True
+		return False
+
+	def get_banned_adresses(self):					#renvoie la liste des adresses mac banned
+		return self.banned_list
 
 	def get_broadcast_adress(self):					#renvoie l'adresse broadcast
 		return self.broadcast
