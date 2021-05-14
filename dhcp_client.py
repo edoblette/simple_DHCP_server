@@ -28,7 +28,7 @@ class DHCP_client(object):
 		clientSocket.sendto(data, dest)
 
 		data, address = clientSocket.recvfrom(MAX_BYTES)
-		print("Receive DHCP pack.\n")
+		print("Receive DHCP ack.\n")
 		DHCP_client.info_pack(data)
 		
 

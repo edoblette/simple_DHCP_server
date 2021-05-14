@@ -9,7 +9,7 @@ clientPort = 68
 
 class serverDHCP(object):
 
-	def server(self, _server_ip, _gateway, _subnet_mask, _range, _time ):
+	def server(self, _server_ip, _gateway, _subnet_mask, _range, _time, _dns ):
 		self.server 
 		self.server_ip = _server_ip
 		self.gateway = _gateway
@@ -17,7 +17,7 @@ class serverDHCP(object):
 		self.addr_manager = IpVector(_server_ip, _gateway, _subnet_mask, _range )
 		self.broadcast_address = self.addr_manager.get_broadcast_adress()
 		self.lease_time = _time
-		self.dns = ""
+		self.dns = [inet_aton(_dns[i]) for i in range(len(_dns))]
 		self.running = True
 		self.server_option = 0
 
@@ -84,7 +84,7 @@ class serverDHCP(object):
 				print("[ banned ] : show banned adresses ")
 				print("[ ban <mac adresse> ] : ban the mac address ")
 				print("[ unban <mac adresse> ] : unban the mac address ")
-				print("[ quiet ] : hide the log informations ")
+				print("[ quiet ] : hide the log informations (default)")
 				print("[ verbose ] : show the log informations ")
 				print("[ erase ] : erase log file ")
 
@@ -162,7 +162,7 @@ class serverDHCP(object):
 		address = address.hex()[:16]
 		return (':'.join(address[i:i+2] for i in range(0,12,2)))
 
-	def packet_analyser(self, packet): #avec cette méthode on récupère le message discover d'un client
+	def packet_analyser(self, packet): 											#avec cette méthode on récupère le message discover d'un client
 		OP = packet[0]
 		HTYPE = packet[1]
 		HLEN = packet[2]
@@ -199,7 +199,9 @@ class serverDHCP(object):
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
 		DHCPOptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
 		DHCPOptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) 				# DHCP server
-		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) 					#DNS servers
+		DHCPOptions6 = bytes([6, 4 * len(self.dns)]) 							#DNS servers
+		for i in self.dns:
+			DHCPOptions6 += i
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
@@ -224,14 +226,16 @@ class serverDHCP(object):
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
 		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
 		DHCPoptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) 				# DHCP server
-		DHCPOptions6 = bytes([6, 4 , 0xC0, 0xA8, 0x01, 0x01]) 					#DNS servers
+		DHCPOptions6 = bytes([6, 4 * len(self.dns)]) 							# DNS servers
+		for i in self.dns:
+			DHCPOptions6 += i
 		ENDMARK = bytes([0xff])
 
 		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
 		return package
 
 	def info_msg(self, message):
-		if(self.server_option == 1):
+		if(self.server_option == 1):											#si l'option est a 1 on est en mode verbose
 			print("{0}".format(message))
  
 		now = datetime.now()
@@ -245,11 +249,11 @@ class serverDHCP(object):
 				0:'ERROR (No more IPs available)',
 				1:'ERROR (Address don\'t exist )',
 				2:'ERROR (Address banned )',
-				3:'Monday'
+				3:'Monday'														#Monday is always a problem :)
 		}
 		return error.get(type_error, "Unexpected error")
 
-	def clearLog(self):
+	def clearLog(self):															#clear le log 
 	    logFile.seek(0)
 	    logFile.truncate()
 
@@ -368,12 +372,13 @@ if __name__ == '__main__':
 	parser.add_argument("submask", type=str, help="network submask")
 	parser.add_argument("range", type=int, help="IPs range")
 	parser.add_argument("time", type=int, help="lease time")
+	parser.add_argument("dns", type=str, nargs='+',  help="local dns")
 	args = parser.parse_args()
 	
 	logFile = open("serverlog.txt", "a")
 
 	dhcp_server = serverDHCP()
-	dhcp_server.server(args.server, args.gateway, args.submask, args.range, args.time)
+	dhcp_server.server(args.server, args.gateway, args.submask, args.range, args.time, args.dns)
 
 	# creating threads
 	server_thread = threading.Thread(target=dhcp_server.start, name='server')
