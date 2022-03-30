@@ -1,0 +1,21 @@
+HOW TO SERVEUR DHCP
+PROJET ROUTAGE - M. SPATHIS
+Ed. OBLETTE
+
+Pour lancer notre serveur il faut tout d'abord lancer "dhcp_server.py" sur un terminal comme ceci: "python server.py -h".
+Le "-h" permet de voir ce dont a besoin notre serveur comme arguments pour l'initialiser.
+En l'ocurrence:
+- Adresse IP machine (0.0.0.0 en local) 
+- Adresse IP gateway (0.0.0.0 en local)
+- Masque de sous-réseau
+- Un nombre qui définira la plage d'adresses IP que le serveur pourra allouer (ex: pour le réseau 192.168.1.0/24, en indiquant 240, on donne la plage 0-240)
+- Un nombre qui définira le temps du bail du serveur en ms
+- Adresses de serveurs DNS primaire et/ou secondaires
+
+Une fois ces arguments donnés le serveur est lancé.
+En écrivant ensuite sur le terminal la commande "help" il est possible de voir toutes les fonctionnalités disponibles.
+Par exemple:
+- usage: pour visualiser l'ensemble des machines connectées au réseau, et l'adresse IP qui leur est attribuée par le serveur
+- ban: pour bannir une machine afin de ne plus la servir
+- banned: pour visualiser l'ensemble des machines bannies par le serveur
+- stop: pour arrêter le serveur
