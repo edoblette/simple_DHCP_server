@@ -5,7 +5,7 @@ import argparse
 MAX_BYTES = 1024
 serverPort = 67
 clientPort = 68
-raw_mac_addr = uuid.getnode()
+raw_mac_addr = 184857108492739 # uuid.getnode()
 
 class DHCP_client(object):
 	def client(self):
@@ -80,7 +80,7 @@ class DHCP_client(object):
 		CHADDR5 = bytes(192)
 		Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
 		DHCPOptions1 = bytes([53 , 1 , 1])
-		DHCPOptions2 = bytes([50 , 4 ]) + socket.inet_aton('0.0.0.100') # a virer
+		DHCPOptions2 = bytes([50 , 4 ]) + socket.inet_aton('0.0.0.100') # option de demande d'adresse ip specifique
 		ENDMARK = bytes([0xff])
 
 		print("adresse mac est :")
