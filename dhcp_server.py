@@ -32,36 +32,38 @@ class serverDHCP(object):
 			self.info_msg("... Waiting for DHCP paquets ... ", False)
 
 			packet, address = self.server.recvfrom(MAX_BYTES)
-			dhcpoptions = self.packet_analyser(packet)[13] 												#Récupère les options du packet reçu
+			packet_analyzed = self.packet_analyser(packet)
+			dhcpoptions = packet_analyzed[13] 												#Récupère les options du packet reçu
 			dhcpMessageType = dhcpoptions[2] 														 	#Type de message reçu
 			dhcpRequestedIp = False
 			for i in range(len(dhcpoptions)):
 				if(dhcpoptions[i:i+2] == bytes([50, 4])):
 					dhcpRequestedIp = self.ip_addr_format(dhcpoptions[i+2:i+6]) 						#on récupère l'adresse demandée
 
-			xid, ciaddr, chaddr, magic_cookie = self.packet_analyser(packet)[4], self.packet_analyser(packet)[7], self.packet_analyser(packet)[11], self.packet_analyser(packet)[12]
+			htype, xid, ciaddr, chaddr, magic_cookie = packet_analyzed[1], packet_analyzed[4], packet_analyzed[7], packet_analyzed[11], packet_analyzed[12]
 			dhcpClientMacAddress = self.mac_addr_format(chaddr)
 
 			if(dhcpClientMacAddress not in self.addr_manager.get_banned_adresses()):					#Si le client n'est pas banni
-				if(dhcpMessageType == 1): 																#Si c'est un DHCP Discover
-					self.info_msg("Received DHCP discovery! (" + dhcpClientMacAddress + ')', True)
-					ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
-					if(ip != False):
-						data = self.set_offer( xid, ciaddr, chaddr, magic_cookie, ip)
-						self.server.sendto(data, dest)
-					else:
-						self.info_msg(self.error_msg(0), True)
+				match dhcpMessageType:
+					case 1:															#Si c'est un DHCP Discover
+						self.info_msg("Received DHCP discovery! (" + dhcpClientMacAddress + ')', True)
+						ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
+						if(ip != False):
+							data = self.response(2, htype, xid, ciaddr, ip, chaddr, magic_cookie) #0x02 is the value of "offer"
+							self.server.sendto(data, dest)
+						else:
+							self.info_msg(self.error_msg(0), True)
 
-				if(dhcpMessageType == 3): 																#Si c'est un DHCP Request
-					self.info_msg("Receive DHCP request.(" + dhcpClientMacAddress + ')', True)
-					ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
-					if(ip != False):
-						data = self.pack_get( xid, ciaddr, chaddr, magic_cookie, ip)
-						self.addr_manager.update_ip(ip, str(dhcpClientMacAddress))
-						self.server.sendto(data, dest)
-						self.info_msg(self.addr_manager.get_ip_allocated(), True)
-					else:
-						self.info_msg(self.error_msg(0), True)
+					case 3:	 																#Si c'est un DHCP Request
+						self.info_msg("Receive DHCP request.(" + dhcpClientMacAddress + ')', True)
+						ip = self.addr_manager.get_ip(str(dhcpClientMacAddress), dhcpRequestedIp)
+						if(ip != False):
+							data = self.response(5, htype, xid, ciaddr, ip, chaddr, magic_cookie) #0x02 is the value of "offer"
+							self.addr_manager.update_ip(ip, str(dhcpClientMacAddress))
+							self.server.sendto(data, dest)
+							self.info_msg(self.addr_manager.get_ip_allocated(), True)
+						else:
+							self.info_msg(self.error_msg(0), True)
 			else:
 				self.info_msg(self.error_msg(2), True)
 		pass	
@@ -75,85 +77,88 @@ class serverDHCP(object):
 	def gui(self):
 		while self.running:
 			request = input("\033[0;37;41m Server info: \033[0m ").lower()
-			if(request == "help"):
-				print("[ stop ]	: stop the DHCP server ")
-				print("[ usage ] : show ip assignment ")
-				print("[ available ] : show ip still available ")
-				print("[ free <mac adresse> ] : free/detach ip address from mac adresse ")
-				print("[ remove <ip adresse> ] : eemove the ip address from the addresses available by the server ")
-				print("[ banned ] : show banned adresses ")
-				print("[ ban <mac adresse> ] : ban the mac address ")
-				print("[ unban <mac adresse> ] : unban the mac address ")
-				print("[ quiet ] : hide the log informations (default)")
-				print("[ verbose ] : show the log informations ")
-				print("[ erase ] : erase log file ")
+			match request:
+				case "help":
+					print("[ stop ]	: stop the DHCP server ")
+					print("[ usage ] : show ip assignment ")
+					print("[ available ] : show ip still available ")
+					print("[ free <mac adresse> ] : free/detach ip address from mac adresse ")
+					print("[ remove <ip adresse> ] : remove the ip address from the addresses available by the server ")
+					print("[ banned ] : show banned adresses ")
+					print("[ ban <mac adresse> ] : ban the mac address ")
+					print("[ unban <mac adresse> ] : unban the mac address ")
+					print("[ quiet ] : hide the log informations (default)")
+					print("[ verbose ] : show the log informations ")
+					print("[ erase ] : erase log file ")
+				
+				case "stop":
+					self.stop()
+				
+				case "usage":
+					print(self.addr_manager.get_ip_allocated())
+				
+				case "available":
+					print(self.addr_manager.get_ip_available())
+				
+				case _ if request.startswith('free '):
+					mac_addr = request.split(' ', 2)
+					if len(mac_addr) == 2:
+						opVal, ip = self.addr_manager.detach_ip(mac_addr[1])
+						if opVal:
+							self.info_msg(f"[MANUAL] Detach: {mac_addr[1]} at {ip}", True)
+							print(f"{mac_addr[1]} at {ip} detached")
+						else:
+							print(self.error_msg(1))
+				
+				case _ if request.startswith('remove '):
+					ip_addr = request.split(' ', 2)
+					if len(ip_addr) == 2:
+						opVal = self.addr_manager.remove_ip(ip_addr[1])
+						if opVal:
+							self.info_msg(f"[MANUAL] Remove: {ip_addr[1]}", True)
+							print(f"{ip_addr[1]} removed")
+						else:
+							print(self.error_msg(1))
+				
+				case "banned":
+					banned_list = self.addr_manager.get_banned_adresses()
+					print("Banned addresses : " + str(len(banned_list)))
+					for ban_id in banned_list:
+						print('\t' + ban_id)
+				
+				case _ if request.startswith('ban '):
+					mac_addr = request.split(' ', 2)
+					if len(mac_addr) == 2:
+						opVal = self.addr_manager.ban_addr(mac_addr[1])
+						if opVal:
+							self.info_msg(f"[MANUAL] Ban: {mac_addr[1]}", True)
+							print(f"{mac_addr[1]} banned")
+						else:
+							print(self.error_msg(1))
+				
+				case _ if request.startswith('unban '):
+					mac_addr = request.split(' ', 2)
+					if len(mac_addr) == 2:
+						opVal = self.addr_manager.unban_addr(mac_addr[1])
+						if opVal:
+							self.info_msg(f"[MANUAL] Unban: {mac_addr[1]}", True)
+							print(f"{mac_addr[1]} unbanned")
+						else:
+							print(self.error_msg(1))
+				
+				case "quiet":
+					self.server_option = 0
+				
+				case "verbose":
+					self.server_option = 1
+				
+				case "erase":
+					self.clearLog()
+					self.info_msg("[MANUAL] Erase log", True)
+				
+				case _:
+					print(f"'{request}' is not a valid command. See 'help'.")
 
-			elif(request == "stop"):
-				self.stop()
-
-			elif(request == "usage"):
-				print(self.addr_manager.get_ip_allocated())
-
-			elif(request == "available"):
-				print(self.addr_manager.get_ip_available())
-
-			elif(request.startswith('free ') == True):
-				mac_addr = request.split(' ', 2)
-				if (len(mac_addr) == 2):
-					opVal, ip = self.addr_manager.detach_ip(mac_addr[1])
-					if(opVal == True):
-						self.info_msg("[MANUAL] Detach : " + mac_addr[1] + " at " + ip , True)
-						print(mac_addr[1] + " at " + ip + " detached")
-					else:
-						print(self.error_msg(1))
-
-			elif(request.startswith('remove ') == True):
-				ip_addr = request.split(' ', 2)
-				if (len(ip_addr) == 2):
-					opVal = self.addr_manager.remove_ip(ip_addr[1])
-					if(opVal == True):
-						self.info_msg("[MANUAL] Remove : " + ip_addr[1], True)
-						print(ip_addr[1] + " removed")
-					else:
-						print(self.error_msg(1))
-
-			elif(request == "banned"):
-				banned_list = self.addr_manager.get_banned_adresses()
-				print("Banned addresses : " + str(len(banned_list)))
-				for ban_id in banned_list:
-					print('\t' + ban_id)
-							
-			elif(request.startswith('ban ') == True):
-				mac_addr = request.split(' ', 2)
-				if (len(mac_addr) == 2):
-					opVal = self.addr_manager.ban_addr(mac_addr[1])
-					if(opVal == True):
-						self.info_msg("[MANUAL] Ban : " + mac_addr[1], True )
-						print(mac_addr[1] + " banned")
-					else:
-						print(self.error_msg(1))
-
-			elif(request.startswith('unban ') == True):
-				mac_addr = request.split(' ', 2)
-				if (len(mac_addr) == 2):
-					opVal = self.addr_manager.unban_addr(mac_addr[1])
-					if(opVal == True):
-						self.info_msg("[MANUAL] Unban : " + mac_addr[1], True )
-						print(mac_addr[1] + " unbanned")
-					else:
-						print(self.error_msg(1))
-
-			elif(request == "quiet"):
-				self.server_option = 0
-
-			elif(request == "verbose"):
-				self.server_option = 1
-
-			elif(request == "erase"):
-				self.clearLog()
-				self.info_msg("[MANUAL] Erase log", True )
-			else:
-				print("'" + request + "'" + " is not a valid command. See 'help'.")
 		pass
 
 	#### Server Methods
@@ -182,48 +187,21 @@ class serverDHCP(object):
 
 		return OP, HTYPE, HLEN, HOPS, XID, SECS, FLAGS, CIADDR, YIADDR, SIADDR, GIADDR, CHADDR, magic_cookie, DHCPoptions
 
-	def set_offer(self, xid, ciaddr, chaddr, magicookie, ip):
-		OP = bytes([0x02])
-		HTYPE = bytes([0x01])
-		HLEN = bytes([0x06])
-		HOPS = bytes([0x00])
+	def response(self, dhcp_code, htype, xid, ciaddr, yiaddr, chaddr, magiccookie):
+		OP = bytes([0x02]) #0x02 represents response
+		HTYPE = bytes([htype]) #Hardware type
+		HLEN = bytes([0x06]) #Hardware Address Length - Ethernet address length which is 6 bytes
+		HOPS = bytes([0x00]) # zero because just create packet
 		XID = xid
 		SECS = bytes([0x00, 0x00])
-		FLAGS = bytes([0x00, 0x00])
-		CIADDR = ciaddr
-		YIADDR = inet_aton(ip) 													#adresse a donner
-		SIADDR = inet_aton(self.server_ip)
-		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-		CHADDR = chaddr
-		magic_cookie = magicookie
-		DHCPoptions1 = bytes([53, 1, 2])
-		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)				# subnet_mask 255.255.255.0
-		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
-		DHCPOptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
-		DHCPOptions5 = bytes([54 , 4]) + inet_aton(self.server_ip) 				# DHCP server
-		DHCPOptions6 = bytes([6, 4 * len(self.dns)]) 							#DNS servers
-		for i in self.dns:
-			DHCPOptions6 += i
-		ENDMARK = bytes([0xff])
-
-		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPOptions4 + DHCPOptions5 + DHCPOptions6 + ENDMARK
-		return package
-
-	def pack_get(self, xid, ciaddr, chaddr, magicookie, ip):
-		OP = bytes([0x02])
-		HTYPE = bytes([0x01])
-		HLEN = bytes([0x06])
-		HOPS = bytes([0x00])
-		XID = xid
-		SECS = bytes([0x00, 0x00])
-		FLAGS = bytes([0x00, 0x00])
-		CIADDR = ciaddr 
-		YIADDR = inet_aton(ip) 													#adresse a donner
-		SIADDR = inet_aton(self.server_ip)
-		GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-		CHADDR = chaddr
-		Magiccookie = magicookie
-		DHCPoptions1 = bytes([53 , 1 , 5]) 										#DHCP ACK(value = 5)
+		FLAGS = bytes([0x00, 0x00]) # unicast - 1000 0000 for a broadcast; and 0000 0000 for a unicast.
+		CIADDR = ciaddr # by default 0.0.0.0 till DORA succed
+		YIADDR = inet_aton(yiaddr) 	#Your (client) IP Address
+		SIADDR = inet_aton(self.server_ip) #Server IP
+		GIADDR = bytes([0x00, 0x00, 0x00, 0x00]) #Gateway IP 
+		CHADDR = chaddr #Client Hardware
+		magic_cookie = magiccookie
+		DHCPoptions1 = bytes([53, 1, dhcp_code])	#DHCP Msg Type : option code - lenght - 0x02 is the value of "offer"/ 0x05 is the value of "ACK"
 		DHCPoptions2 = bytes([1 , 4]) + inet_aton(self.subnet_mask)				# subnet_mask 255.255.255.0
 		DHCPoptions3 = bytes([3 , 4 ]) + inet_aton(self.gateway) 				# gateway/router
 		DHCPoptions4 = bytes([51 , 4]) + ((self.lease_time).to_bytes(4, byteorder='big')) 	#86400s(1, day) IP address lease time
@@ -232,10 +210,10 @@ class serverDHCP(object):
 		for i in self.dns:
 			DHCPOptions6 += i
 		ENDMARK = bytes([0xff])
-
-		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + Magiccookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 + DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
+		
+		package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + magic_cookie + DHCPoptions1 + DHCPoptions2 + DHCPoptions3 +  DHCPoptions4 + DHCPoptions5 + DHCPOptions6 + ENDMARK
 		return package
-
+	
 	def info_msg(self, message, loggable):
 		if(self.server_option == 1):											#si l'option est a 1 on est en mode verbose
 			print("{0}".format(message))
@@ -252,7 +230,7 @@ class serverDHCP(object):
 				0:'ERROR (No more IPs available)',
 				1:'ERROR (Address don\'t exist )',
 				2:'ERROR (Address banned )',
-				3:'Monday'														#Monday is always a problem :)
+				3:'Other'														
 		}
 		return error.get(type_error, "Unexpected error")
 
